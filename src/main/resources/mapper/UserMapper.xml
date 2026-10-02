@@ -4,8 +4,8 @@
 
     <!-- INSERT ... RETURNING 有结果集，需用 select 执行；flushCache 清掉一级缓存，避免之后读到旧数据 -->
     <select id="insert" resultType="com.example.scaffold.user.UserRecord" flushCache="true">
-        INSERT INTO users (name, email)
-        VALUES (#{name}, #{email})
+        INSERT INTO users (name, email, password_hash)
+        VALUES (#{name}, #{email}, #{passwordHash})
         RETURNING id, name, email, created_at
     </select>
 
@@ -13,6 +13,12 @@
         SELECT id, name, email, created_at
         FROM users
         WHERE id = #{id}
+    </select>
+
+    <select id="findCredentialByEmail" resultType="com.example.scaffold.user.UserCredential">
+        SELECT id, password_hash
+        FROM users
+        WHERE email = #{email}
     </select>
 
     <select id="search" resultType="com.example.scaffold.user.UserRecord">

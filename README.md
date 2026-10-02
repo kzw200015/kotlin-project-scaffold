@@ -9,6 +9,7 @@ Spring Boot 4.1 + Kotlin 2.3 + MyBatis 脚手架，由 [start.spring.io](https:/
 | Web | spring-boot-starter-webmvc、jackson-module-kotlin（Jackson 3） |
 | 并发 | 虚拟线程（`spring.threads.virtual.enabled=true`，Tomcat 请求线程与 `@Async` 等执行器均为虚拟线程）、kotlinx-coroutines-core（配合 `Dispatchers.Virtual` 在一次调用内做并发） |
 | 数据访问 | mybatis-spring-boot-starter 4.1（XML mapper） |
+| 鉴权 | spring-boot-starter-security、spring-boot-starter-security-oauth2-resource-server（自签 JWT，HS256） |
 | 运维 | spring-boot-starter-actuator（默认只暴露 `/actuator/health`，供部署平台做健康检查） |
 | 迁移 | Flyway（`src/main/resources/db/migration`），当前表结构快照见 `db/schema.sql` |
 | 日志 | SLF4J + Logback（Spring Boot 默认）；惰性日志用 SLF4J 2 fluent API：`log.atDebug().log { "id=$id" }` |
@@ -22,10 +23,11 @@ Spring Boot 4.1 + Kotlin 2.3 + MyBatis 脚手架，由 [start.spring.io](https:/
 export SPRING_DATASOURCE_URL=jdbc:postgresql://dev-db:5432/app
 export SPRING_DATASOURCE_USERNAME=app
 export SPRING_DATASOURCE_PASSWORD=******
+export APP_JWT_SECRET=$(openssl rand -base64 48)   # JWT 签名密钥，必填；多实例部署时必须一致
 
 ./gradlew bootRun       # 启动时自动执行 Flyway 迁移
 ./gradlew test          # 需要 Docker，Testcontainers 启动临时 PostgreSQL
-./gradlew bootTestRun   # 需要 Docker，用 Testcontainers 临时库启动应用（无需准备数据库）
+./gradlew bootTestRun   # 需要 Docker，用 Testcontainers 临时库启动应用（无需准备数据库和 JWT 密钥）
 ./gradlew updateSchema  # 需要 Docker，迁移变更后更新 db/schema.sql
 ```
 
@@ -60,6 +62,25 @@ export SPRING_DATASOURCE_PASSWORD=******
 Tomcat 在解析阶段就拒绝的非法请求（如格式错误的请求行）不经过 Spring，兜不住，这类请求基本只来自扫描器。
 
 **唯一性校验**：依赖数据库唯一约束，捕获 `DuplicateKeyException` 转成业务错误，不先查再插（并发下会漏判），见 `UserService.create`。这种捕获只在没有外层事务时有效：PostgreSQL 中唯一约束冲突会让整个事务进入中止状态，之后同一事务内的 SQL 都会失败。需要在事务中途处理冲突时，改用 `INSERT ... ON CONFLICT DO NOTHING RETURNING ...`，根据是否返回行判断冲突。
+
+## 鉴权约定
+
+无状态 JWT：登录接口校验邮箱密码后签发 token，之后的请求带上 `Authorization: Bearer <token>`。配置见 `platform/SecurityConfig.kt`，登录见 `auth/AuthService.kt`。
+
+```bash
+curl -X POST localhost:8080/api/v1/users -H 'Content-Type: application/json' \
+  -d '{"name": "alice", "email": "alice@example.com", "password": "password1"}'   # 注册
+curl -X POST localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' \
+  -d '{"email": "alice@example.com", "password": "password1"}'                    # 返回 {"data": {"token": "...", "expiresAt": "..."}}
+curl localhost:8080/api/v1/users/me -H "Authorization: Bearer $TOKEN"
+```
+
+- **公开接口**：注册（`POST /api/v1/users`）、登录、`/actuator/health/**`、`/error`，在 `SecurityConfig` 中逐个列出；其余接口都要求登录。新增公开接口时加到这里。
+- **当前用户**：Controller 参数写 `@AuthenticationPrincipal jwt: Jwt`，用 `jwt.userId` 取用户 id（token 的 `sub`），需要用户信息时再查库，见 `UserController.me`。
+- **401**：未带 token、token 过期、签名错误时返回 401，响应体为统一格式（`code`、`message` 为 null），带 `WWW-Authenticate: Bearer ...` 头。Spring Security 在 Filter 中拒绝请求，响应体由入口点调用 `sendError` 转发到 `/error` 写出，所以 `/error` 必须公开。登录失败是业务错误，返回 `40101`，不区分邮箱不存在和密码错误。
+- **token**：HS256 签名，`sub` 为用户 id，有效期 `app.jwt.ttl`（默认 2 小时）。密钥 `app.jwt.secret` 至少 32 字节，没有默认值，用环境变量 `APP_JWT_SECRET` 提供；测试和 `bootTestRun` 用 `src/test/resources/config/application.yaml` 中的测试密钥。JWT 签发后到过期前无法吊销：没有服务端注销，改密码、封号后旧 token 仍然有效，需要时缩短有效期或另加吊销名单。
+- **密码**：`PasswordEncoder` 默认 BCrypt，哈希带算法前缀（`{bcrypt}...`）存入 `users.password_hash`，记录类 `UserRecord` 不含该字段。BCrypt 最多处理 72 字节，注册时按字节校验长度（中文一个字 3 字节）。
+- **以后加角色**：需要 403 时，像 401 一样配置 `accessDeniedHandler`（默认的同样不写响应体）。用 `@PreAuthorize` 做方法级授权时，它抛出的 `AccessDeniedException` 会先被 `ErrorHandler` 捕获，需要在 `when` 中映射为 403，否则会返回 500。
 
 ## 表结构
 

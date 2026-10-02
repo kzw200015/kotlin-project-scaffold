@@ -8,8 +8,10 @@ import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.web.server.LocalServerPort
+import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
+import org.springframework.core.Ordered
 import org.springframework.web.filter.OncePerRequestFilter
 import java.io.IOException
 import java.net.URI
@@ -64,8 +66,9 @@ class ErrorHandlerTests(@LocalServerPort private val port: Int) {
 
 	@TestConfiguration
 	class FailingFilterConfig {
+		// 排在 Spring Security 之前，否则请求先因未登录被拒绝
 		@Bean
-		fun failingFilter() = object : OncePerRequestFilter() {
+		fun failingFilter() = FilterRegistrationBean(object : OncePerRequestFilter() {
 			override fun doFilterInternal(request: HttpServletRequest, response: HttpServletResponse, chain: FilterChain) {
 				when (request.requestURI) {
 					"/fail/app" -> throw AppException(40101, "unauthorized")
@@ -78,6 +81,6 @@ class ErrorHandlerTests(@LocalServerPort private val port: Int) {
 					else -> chain.doFilter(request, response)
 				}
 			}
-		}
+		}).apply { order = Ordered.HIGHEST_PRECEDENCE }
 	}
 }

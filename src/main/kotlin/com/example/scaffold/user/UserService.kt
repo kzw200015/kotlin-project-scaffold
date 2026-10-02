@@ -4,18 +4,20 @@ import com.example.scaffold.platform.Page
 import com.example.scaffold.platform.escapeLike
 import com.example.scaffold.platform.Tx
 import org.springframework.dao.DuplicateKeyException
+import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 
 @Service
-class UserService(private val tx: Tx, private val mapper: UserMapper) {
+class UserService(private val tx: Tx, private val mapper: UserMapper, private val passwordEncoder: PasswordEncoder) {
 
 	/**
 	 * 单条 INSERT 本身是原子的，不需要事务。邮箱重复靠唯一约束判断，而不是先查再插（并发下会漏判）。
 	 * 注意：在外层事务中调用时，PostgreSQL 唯一约束冲突会让整个事务进入中止状态，这里的捕获救不回外层事务。
 	 */
-	fun create(name: String, email: String): UserRecord =
+	fun create(name: String, email: String, password: String): UserRecord =
 		try {
-			mapper.insert(name, email)
+			// encode 只在入参为 null 时返回 null
+			mapper.insert(name, email, checkNotNull(passwordEncoder.encode(password)))
 		} catch (e: DuplicateKeyException) {
 			UserErrors.emailTaken(email, e)
 		}

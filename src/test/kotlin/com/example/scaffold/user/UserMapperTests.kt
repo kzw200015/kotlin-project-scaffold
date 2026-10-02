@@ -14,7 +14,7 @@ class UserMapperTests(@Autowired private val mapper: UserMapper) {
 
 	@Test
 	fun 插入后返回数据库生成的新行() {
-		val row = mapper.insert("alice", "alice@example.com")
+		val row = mapper.insert("alice", "alice@example.com", "hash")
 
 		assertEquals("alice", row.name)
 		assertEquals("alice@example.com", row.email)
@@ -22,8 +22,16 @@ class UserMapperTests(@Autowired private val mapper: UserMapper) {
 	}
 
 	@Test
+	fun 按邮箱查询登录凭证() {
+		val id = mapper.insert("alice", "alice@example.com", "{bcrypt}xxx").id
+
+		assertEquals(UserCredential(id, "{bcrypt}xxx"), mapper.findCredentialByEmail("alice@example.com"))
+		assertNull(mapper.findCredentialByEmail("nobody@example.com"))
+	}
+
+	@Test
 	fun 搜索按关键字过滤并分页() {
-		listOf("bob", "carol", "dave").forEach { mapper.insert(it, "$it@example.com") }
+		listOf("bob", "carol", "dave").forEach { mapper.insert(it, "$it@example.com", "hash") }
 
 		assertEquals(listOf("bob", "carol"), mapper.search(keyword = null, limit = 2, offset = 0).map { it.name })
 		assertEquals(listOf("dave"), mapper.search(keyword = null, limit = 2, offset = 2).map { it.name })
@@ -34,7 +42,7 @@ class UserMapperTests(@Autowired private val mapper: UserMapper) {
 
 	@Test
 	fun 按id更新和删除() {
-		val id = mapper.insert("bob", "bob@example.com").id
+		val id = mapper.insert("bob", "bob@example.com", "hash").id
 
 		assertEquals(1, mapper.updateName(id, "robert"))
 		assertEquals("robert", mapper.findById(id)?.name)

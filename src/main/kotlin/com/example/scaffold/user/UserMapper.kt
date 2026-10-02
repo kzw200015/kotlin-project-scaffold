@@ -8,9 +8,11 @@ import org.apache.ibatis.annotations.Mapper
 @Mapper
 interface UserMapper {
 	/** 插入并返回新行（含数据库生成的 id、createdAt）。 */
-	fun insert(name: String, email: String): UserRecord
+	fun insert(name: String, email: String, passwordHash: String): UserRecord
 
 	fun findById(id: Long): UserRecord?
+
+	fun findCredentialByEmail(email: String): UserCredential?
 
 	/** 按 name / email 模糊搜索，keyword 为空时不过滤；keyword 中的通配符需调用方先用 escapeLike 转义。 */
 	fun search(keyword: String?, limit: Int, offset: Int): List<UserRecord>

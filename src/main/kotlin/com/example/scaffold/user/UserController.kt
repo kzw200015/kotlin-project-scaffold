@@ -2,13 +2,17 @@ package com.example.scaffold.user
 
 import com.example.scaffold.platform.ApiResponse
 import com.example.scaffold.platform.Page
+import com.example.scaffold.platform.userId
 import jakarta.validation.Valid
+import jakarta.validation.constraints.AssertTrue
 import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import org.springframework.http.HttpStatus
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -24,10 +28,16 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/users")
 class UserController(private val service: UserService) {
 
+	/** 注册，无需登录（见 SecurityConfig）。 */
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	fun create(@Valid @RequestBody req: CreateUserRequest): ApiResponse<UserRecord> =
-		ApiResponse.ok(service.create(req.name, req.email))
+		ApiResponse.ok(service.create(req.name, req.email, req.password))
+
+	/** 当前登录用户。 */
+	@GetMapping("/me")
+	fun me(@AuthenticationPrincipal jwt: Jwt): ApiResponse<UserRecord> =
+		ApiResponse.ok(service.get(jwt.userId))
 
 	@GetMapping("/{id}")
 	fun get(@PathVariable id: Long): ApiResponse<UserRecord> =
@@ -55,7 +65,13 @@ class UserController(private val service: UserService) {
 data class CreateUserRequest(
 	@NotBlank @Size(max = 50) val name: String,
 	@NotBlank @Email val email: String,
-)
+	@Size(min = 8, max = 72) val password: String,
+) {
+	/** BCrypt 最多处理 72 字节，超出时会抛异常；@Size 按字符数算，中文一个字占 3 字节，需另外按字节校验。 */
+	@get:AssertTrue
+	val passwordWithinBcryptLimit: Boolean
+		get() = password.toByteArray().size <= 72
+}
 
 data class RenameUserRequest(
 	@NotBlank @Size(max = 50) val name: String,

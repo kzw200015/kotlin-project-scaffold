@@ -1,0 +1,4 @@
+# 只在测试 classpath 上（包括 ./gradlew bootTestRun），会与 src/main/resources/application.yaml 合并，同名配置以这里为准
+app:
+  jwt:
+    secret: test-only-secret-at-least-32-bytes-long

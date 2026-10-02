@@ -13,10 +13,11 @@ Spring Boot 4.1 + Kotlin 2.3 + MyBatis + PostgreSQL。完整约定见 README.md�
 - **结果类型**：data class，字段全部 `val`。需要数据库生成值的插入用 `INSERT ... RETURNING`，写在 `<select flushCache="true">` 里返回新行，不用 `useGeneratedKeys`。
 - **分层**：Controller（`@Valid` 校验、`ApiResponse.ok(...)` 显式包装）→ Service（业务逻辑、事务边界）→ Mapper。Controller 不直接调用 Mapper。示例见 `user/`。
 - **错误**：业务错误抛 `AppException(code, message)`，业务码 5 位、前三位为 HTTP 状态码；领域错误集中定义在各自包内，写成直接抛出异常的函数（返回 `Nothing`），调用处 `?: UserErrors.notFound(id)`，见 `user/UserErrors.kt`。其他异常由 `platform/ErrorHandler` 只返回 HTTP 状态码，`code`、`message` 为 null；它同时接管 `/error`，Filter 中的异常、`sendError` 也返回统一格式。唯一性冲突靠数据库约束 + 捕获 `DuplicateKeyException`（仅在无外层事务时有效），不先查再插。
+- **鉴权**：Spring Security + 自签 JWT（`platform/SecurityConfig.kt`），除 `SecurityConfig` 中列出的公开接口外都要求登录，新增公开接口时加到那里。Controller 取当前用户用 `@AuthenticationPrincipal jwt: Jwt` + `jwt.userId`。密码只存 `PasswordEncoder` 生成的哈希，记录类不含密码哈希字段，登录用的凭证单独查（`UserCredential`）。
 - **事务**：不用 `@Transactional`，用 `platform/Tx.kt` 显式开启：`tx.write { }` / `tx.read { }`。
 - **并发**：Controller / Service 写普通函数（跑在虚拟线程上），不写 `suspend` Controller；需要并发时写 `runBlocking { async(Dispatchers.Virtual) { } }`，不要把调度器传给 `runBlocking`。
 - **分包**：按领域分包（如 `user/`），跨领域基础设施放 `platform/`。
-- **测试**：Mapper / Service 用 `@MybatisTest` + Testcontainers 跑真实 SQL（Service 需 `@Import(XxxService::class, Tx::class)`）；Controller 用 `@WebMvcTest` + `@MockitoBean` mock Service，验证响应格式与错误码；mock 用 mockito-kotlin。
+- **测试**：Mapper / Service 用 `@MybatisTest` + Testcontainers 跑真实 SQL（Service 需 `@Import(XxxService::class, Tx::class)`，用到密码时再导入 `PasswordEncoderConfig`）；Controller 用 `@WebMvcTest` + `@Import(SecurityConfig::class)` + `@MockitoBean` mock Service，需要登录的请求加 `with(jwt())`，验证响应格式与错误码；经过 `/error` 的响应体（Filter 异常、401）用 `RANDOM_PORT` 启动真实服务器验证，见 `auth/AuthTests.kt`；mock 用 mockito-kotlin。
 - **命名**：业务代码（含类名）用英文 camelCase；测试方法名用中文描述被测场景，不用反引号句子，也不加 `@DisplayName`（如 `fun 只读事务拒绝写操作()`）。方法名中不能有空格和中文标点，需要分隔时用下划线。
 
 ## 常用命令
@@ -24,5 +25,5 @@ Spring Boot 4.1 + Kotlin 2.3 + MyBatis + PostgreSQL。完整约定见 README.md�
 ```bash
 ./gradlew build          # 编译 + 全部测试（需要 Docker）
 ./gradlew updateSchema   # 迁移变更后更新 db/schema.sql
-./gradlew bootRun        # 启动，数据源用 SPRING_DATASOURCE_* 环境变量覆盖
+./gradlew bootRun        # 启动，需设置 APP_JWT_SECRET；数据源用 SPRING_DATASOURCE_* 环境变量覆盖
 ```

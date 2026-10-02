@@ -25,7 +25,7 @@ class TxTests(
 
 	@Test
 	fun 写事务提交并返回代码块结果() {
-		val inserted = tx.write { mapper.insert("alice", "alice@example.com") }
+		val inserted = tx.write { mapper.insert("alice", "alice@example.com", "hash") }
 
 		assertEquals(inserted, mapper.findById(inserted.id))
 		assertEquals(1, userCount())
@@ -35,13 +35,13 @@ class TxTests(
 	fun 抛出异常时回滚并原样抛出() {
 		assertFailsWith<IllegalStateException> {
 			tx.write {
-				mapper.insert("alice", "alice@example.com")
+				mapper.insert("alice", "alice@example.com", "hash")
 				error("boom")
 			}
 		}
 		assertFailsWith<IOException> {
 			tx.write {
-				mapper.insert("bob", "bob@example.com")
+				mapper.insert("bob", "bob@example.com", "hash")
 				throw IOException("checked")
 			}
 		}
@@ -52,7 +52,7 @@ class TxTests(
 	@Test
 	fun 调用setRollbackOnly时不抛异常也回滚() {
 		tx.write { status ->
-			mapper.insert("alice", "alice@example.com")
+			mapper.insert("alice", "alice@example.com", "hash")
 			status.setRollbackOnly()
 		}
 
@@ -62,7 +62,7 @@ class TxTests(
 	@Test
 	fun 只读事务拒绝写操作() {
 		assertFailsWith<DataAccessException> {
-			tx.read { mapper.insert("alice", "alice@example.com") }
+			tx.read { mapper.insert("alice", "alice@example.com", "hash") }
 		}
 	}
 
