@@ -9,7 +9,7 @@ import org.springframework.context.annotation.Import
 class ScaffoldApplicationTests {
 
 	@Test
-	fun contextLoads() {
+	fun 应用上下文能正常启动() {
 	}
 
 }

@@ -4,18 +4,16 @@ import com.example.scaffold.TestcontainersConfiguration
 import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.context.annotation.Import
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 @MybatisTest
 @Import(TestcontainersConfiguration::class)
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class UserMapperTests(@Autowired private val mapper: UserMapper) {
 
 	@Test
-	fun `insert returns the new row`() {
+	fun 插入后返回数据库生成的新行() {
 		val row = mapper.insert("alice", "alice@example.com")
 
 		assertEquals("alice", row.name)
@@ -24,7 +22,7 @@ class UserMapperTests(@Autowired private val mapper: UserMapper) {
 	}
 
 	@Test
-	fun `search filters by keyword and pages`() {
+	fun 搜索按关键字过滤并分页() {
 		listOf("bob", "carol", "dave").forEach { mapper.insert(it, "$it@example.com") }
 
 		assertEquals(listOf("bob", "carol"), mapper.search(keyword = null, limit = 2, offset = 0).map { it.name })
@@ -35,7 +33,7 @@ class UserMapperTests(@Autowired private val mapper: UserMapper) {
 	}
 
 	@Test
-	fun `update and delete by id`() {
+	fun 按id更新和删除() {
 		val id = mapper.insert("bob", "bob@example.com").id
 
 		assertEquals(1, mapper.updateName(id, "robert"))

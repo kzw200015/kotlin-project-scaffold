@@ -13,7 +13,7 @@ import kotlin.time.measureTime
 class CoroutinesTests {
 
 	@Test
-	fun `runs on virtual threads`() = runBlocking {
+	fun 任务运行在虚拟线程上() = runBlocking {
 		val thread = withContext(Dispatchers.Virtual) { Thread.currentThread() }
 
 		assertTrue(thread.isVirtual)
@@ -21,7 +21,7 @@ class CoroutinesTests {
 	}
 
 	@Test
-	fun `blocking calls run concurrently without a thread cap`() = runBlocking {
+	fun 阻塞调用并发执行且没有线程数上限() = runBlocking {
 		val elapsed = measureTime {
 			List(1_000) { async(Dispatchers.Virtual) { Thread.sleep(500) } }.awaitAll()
 		}

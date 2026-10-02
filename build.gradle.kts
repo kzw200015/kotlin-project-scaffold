@@ -59,3 +59,18 @@ tasks.withType<Test> {
 	// 显式挂载 Mockito agent，避免 JDK 21+ 动态挂载告警（未来 JDK 将默认禁止）
 	jvmArgs("-javaagent:${mockitoAgent.asPath}")
 }
+
+tasks.test {
+	// 快照变化时重新跑测试（SchemaSnapshotTests 会读取它）
+	inputs.files("db/schema.sql").withPropertyName("schemaSnapshot")
+}
+
+tasks.register<Test>("updateSchema") {
+	description = "迁移后从数据库导出表结构，更新 db/schema.sql"
+	group = "database"
+	testClassesDirs = sourceSets.test.get().output.classesDirs
+	classpath = sourceSets.test.get().runtimeClasspath
+	filter { includeTestsMatching("com.example.scaffold.SchemaSnapshotTests") }
+	systemProperty("schema.update", "true")
+	outputs.upToDateWhen { false }
+}

@@ -9,7 +9,7 @@ Spring Boot 4.1 + Kotlin 2.3 + MyBatis 脚手架，由 [start.spring.io](https:/
 | Web | spring-boot-starter-webmvc、jackson-module-kotlin（Jackson 3） |
 | 并发 | 虚拟线程（`spring.threads.virtual.enabled=true`，Tomcat 请求线程与 `@Async` 等执行器均为虚拟线程）、kotlinx-coroutines（core + reactor，Spring 协程支持所需） |
 | 数据访问 | mybatis-spring-boot-starter 4.1（XML mapper） |
-| 迁移 | Flyway（`src/main/resources/db/migration`） |
+| 迁移 | Flyway（`src/main/resources/db/migration`），当前表结构快照见 `db/schema.sql` |
 | 日志 | SLF4J + Logback（Spring Boot 默认）；惰性日志用 SLF4J 2 fluent API：`log.atDebug().log { "id=$id" }` |
 | 测试 | JUnit 5 + kotlin-test、Mockito + mockito-kotlin（`mock<T>()`、`whenever`），Spring 中替换 bean 用 `@MockitoBean`、`@MybatisTest`、Testcontainers |
 
@@ -25,7 +25,17 @@ export SPRING_DATASOURCE_PASSWORD=******
 ./gradlew bootRun       # 启动时自动执行 Flyway 迁移
 ./gradlew test          # 需要 Docker，Testcontainers 启动临时 PostgreSQL
 ./gradlew bootTestRun   # 需要 Docker，用 Testcontainers 临时库启动应用（无需准备数据库）
+./gradlew updateSchema  # 需要 Docker，迁移变更后更新 db/schema.sql
 ```
+
+## 表结构
+
+`db/schema.sql` 是 Flyway 迁移后的完整表结构快照（`pg_dump --schema-only` 导出，含约束、索引和字段注释），查看当前有哪些表、字段时以它为准，不必逐个阅读迁移文件。
+
+- **生成**：`SchemaSnapshotTests` 用 Testcontainers 启动 PostgreSQL、执行迁移后，调用容器内的 `pg_dump` 导出（版本与数据库一致，本机无需安装）。
+- **防过期**：普通 `./gradlew test` 会比对快照与真实结构，不一致即失败；执行 `./gradlew updateSchema` 重新生成并提交。
+- **改表流程**：新增迁移 `V{n}__{描述}.sql`（不修改已有迁移）→ `./gradlew updateSchema` → 迁移与快照一起提交。
+- **字段注释**：新表新列用 `COMMENT ON TABLE / COLUMN` 写明含义、取值范围、单位，注释会随快照导出，数据库客户端中也可见。
 
 ## MyBatis 约定
 

@@ -5,7 +5,6 @@ import com.example.scaffold.user.UserMapper
 import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.context.annotation.Import
 import org.springframework.dao.DataAccessException
 import org.springframework.test.context.jdbc.Sql
@@ -17,7 +16,6 @@ import kotlin.test.assertFailsWith
 
 @MybatisTest
 @Import(Tx::class, TestcontainersConfiguration::class)
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED) // 关闭测试默认的回滚事务，才能观察到真实的提交与回滚
 @Sql(statements = ["DELETE FROM users"], executionPhase = Sql.ExecutionPhase.AFTER_TEST_METHOD)
 class TxTests(
@@ -26,7 +24,7 @@ class TxTests(
 ) {
 
 	@Test
-	fun `write commits and returns the block result`() {
+	fun 写事务提交并返回代码块结果() {
 		val inserted = tx.write { mapper.insert("alice", "alice@example.com") }
 
 		assertEquals(inserted, mapper.findById(inserted.id))
@@ -34,7 +32,7 @@ class TxTests(
 	}
 
 	@Test
-	fun `exception rolls back and is rethrown as is`() {
+	fun 抛出异常时回滚并原样抛出() {
 		assertFailsWith<IllegalStateException> {
 			tx.write {
 				mapper.insert("alice", "alice@example.com")
@@ -52,7 +50,7 @@ class TxTests(
 	}
 
 	@Test
-	fun `setRollbackOnly rolls back without exception`() {
+	fun 调用setRollbackOnly时不抛异常也回滚() {
 		tx.write { status ->
 			mapper.insert("alice", "alice@example.com")
 			status.setRollbackOnly()
@@ -62,7 +60,7 @@ class TxTests(
 	}
 
 	@Test
-	fun `read rejects writes`() {
+	fun 只读事务拒绝写操作() {
 		assertFailsWith<DataAccessException> {
 			tx.read { mapper.insert("alice", "alice@example.com") }
 		}
