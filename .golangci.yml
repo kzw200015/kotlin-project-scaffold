@@ -1,0 +1,93 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # standard = errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    - bodyclose       # HTTP response body 未关闭
+    - copyloopvar     # 多余的循环变量拷贝
+    - errname         # 错误类型/变量命名规范（ErrXxx / XxxError）
+    - errorlint       # 用 errors.Is/As 而非 == 或类型断言
+    - exhaustive      # switch 枚举分支完整性
+    - gocritic        # 常见代码坏味道
+    - gosec           # 安全问题
+    - intrange        # 可用 for range n 的循环
+    - misspell        # 英文拼写
+    - modernize       # 可用新语法/标准库替代的写法
+    - nilerr          # err != nil 却返回 nil
+    - noctx           # 发请求/查库未传 context
+    - nolintlint      # //nolint 用法规范
+    - perfsprint      # 可替换 fmt.Sprintf 的低效写法
+    - prealloc        # 可预分配的切片
+    - revive          # golint 继任者
+    - unconvert       # 多余的类型转换
+    - unparam         # 未使用的参数/返回值
+    - usestdlibvars   # 使用 http.MethodGet 等标准库常量
+    - wastedassign    # 无效赋值
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+    exhaustive:
+      default-signifies-exhaustive: true
+    gocritic:
+      enabled-tags: [diagnostic, style, performance]
+      disabled-checks:
+        - hugeParam        # 配置等结构体按值传递是有意为之
+        - unnamedResult
+        - whyNoLint        # 由 nolintlint 负责
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment   # 结构体字段对齐收益小、噪音大
+        - shadow           # `err :=` 遮蔽在 Go 中很常见
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: increment-decrement
+        - name: var-naming
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: redefines-builtin-id
+        - name: use-any
+
+  exclusions:
+    generated: lax # 跳过 sqlc / wire 生成的代码
+    presets:
+      - common-false-positives
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters: [gosec, errcheck, unparam, perfsprint]
+
+formatters:
+  enable:
+    - gci
+    - gofumpt
+  settings:
+    # import 分组：标准库 / 第三方 / 本模块（localmodule 自动读取 go.mod）
+    gci:
+      sections:
+        - standard
+        - default
+        - localmodule
+  exclusions:
+    generated: lax
