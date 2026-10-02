@@ -26,7 +26,7 @@ import javax.crypto.spec.SecretKeySpec
  * 鉴权：无状态 JWT，请求头 `Authorization: Bearer <token>`，token 由登录接口签发（见 `auth/AuthService.kt`）。
  * 除下面列出的公开接口外，其余接口都要求登录。
  */
-@Configuration(proxyBeanMethods = false)
+@Configuration
 @EnableConfigurationProperties(JwtProperties::class)
 class SecurityConfig(private val jwt: JwtProperties) {
 
@@ -72,7 +72,7 @@ class SecurityConfig(private val jwt: JwtProperties) {
 }
 
 /** 单独放一个配置类，方便 `@MybatisTest` 等切片测试只导入它。 */
-@Configuration(proxyBeanMethods = false)
+@Configuration
 class PasswordEncoderConfig {
 	/** 默认 BCrypt。哈希带算法前缀（如 `{bcrypt}$2a$10$...`），以后换算法时旧哈希仍能校验。 */
 	@Bean
