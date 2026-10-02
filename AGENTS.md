@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Spring Boot 4.1 + Kotlin 2.3 + MyBatis + PostgreSQL。完整约定见 README.md，下面是写代码前必须知道的要点。
 
