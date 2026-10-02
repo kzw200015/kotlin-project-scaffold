@@ -1,0 +1,43 @@
+package com.example.scaffold.user
+
+import com.example.scaffold.platform.Page
+import com.example.scaffold.platform.escapeLike
+import com.example.scaffold.platform.Tx
+import org.springframework.dao.DuplicateKeyException
+import org.springframework.stereotype.Service
+
+@Service
+class UserService(private val tx: Tx, private val mapper: UserMapper) {
+
+	/**
+	 * 单条 INSERT 本身是原子的，不需要事务。邮箱重复靠唯一约束判断，而不是先查再插（并发下会漏判）。
+	 * 注意：在外层事务中调用时，PostgreSQL 唯一约束冲突会让整个事务进入中止状态，这里的捕获救不回外层事务。
+	 */
+	fun create(name: String, email: String): UserRecord =
+		try {
+			mapper.insert(name, email)
+		} catch (e: DuplicateKeyException) {
+			UserErrors.emailTaken(email, e)
+		}
+
+	fun get(id: Long): UserRecord =
+		mapper.findById(id) ?: UserErrors.notFound(id)
+
+	/** [page] 从 1 开始。 */
+	fun search(keyword: String?, page: Int, size: Int): Page<UserRecord> {
+		val pattern = keyword?.escapeLike()
+		return Page(
+			items = mapper.search(pattern, limit = size, offset = (page - 1) * size),
+			total = mapper.count(pattern),
+		)
+	}
+
+	fun rename(id: Long, name: String): UserRecord = tx.write {
+		if (mapper.updateName(id, name) == 0) UserErrors.notFound(id)
+		mapper.findById(id) ?: UserErrors.notFound(id)
+	}
+
+	fun delete(id: Long) {
+		if (mapper.deleteById(id) == 0) UserErrors.notFound(id)
+	}
+}

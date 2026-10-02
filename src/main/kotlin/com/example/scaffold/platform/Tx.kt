@@ -20,13 +20,12 @@ class Tx(transactionManager: PlatformTransactionManager) {
 	/** 在读写事务中执行 [block]。 */
 	fun <T> write(block: (TransactionStatus) -> T): T = execute(readWrite, block)
 
-	/** 在只读事务中执行 [block]，写操作会被数据库拒绝。 */
+	/** 在只读事务中执行 [block]，写操作会被数据库拒绝。只读不代表一致快照：默认 READ COMMITTED 下，多条查询仍可能看到不同时刻的数据。 */
 	fun <T> read(block: (TransactionStatus) -> T): T = execute(readOnly, block)
 
-	@Suppress("UNCHECKED_CAST")
 	private fun <T> execute(template: TransactionTemplate, block: (TransactionStatus) -> T): T =
 		try {
-			template.execute(block) as T
+			template.execute(block)
 		} catch (e: UndeclaredThrowableException) {
 			// TransactionTemplate 会把 checked 异常包一层，Kotlin 不区分 checked 异常，这里还原为原始异常
 			throw e.cause ?: e

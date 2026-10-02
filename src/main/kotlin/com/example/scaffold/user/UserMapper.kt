@@ -12,7 +12,7 @@ interface UserMapper {
 
 	fun findById(id: Long): UserRecord?
 
-	/** 按 name / email 模糊搜索，keyword 为空时不过滤。 */
+	/** 按 name / email 模糊搜索，keyword 为空时不过滤；keyword 中的通配符需调用方先用 escapeLike 转义。 */
 	fun search(keyword: String?, limit: Int, offset: Int): List<UserRecord>
 
 	/** 与 [search] 条件相同的总数。 */

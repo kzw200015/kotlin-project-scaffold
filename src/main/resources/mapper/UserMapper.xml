@@ -20,7 +20,7 @@
         FROM users
         <where>
             <if test="keyword != null and keyword != ''">
-                AND (name ILIKE '%' || #{keyword} || '%' OR email ILIKE '%' || #{keyword} || '%')
+                AND (name ILIKE '%' || #{keyword} || '%' ESCAPE '\' OR email ILIKE '%' || #{keyword} || '%' ESCAPE '\')
             </if>
         </where>
         ORDER BY id
@@ -32,7 +32,7 @@
         FROM users
         <where>
             <if test="keyword != null and keyword != ''">
-                AND (name ILIKE '%' || #{keyword} || '%' OR email ILIKE '%' || #{keyword} || '%')
+                AND (name ILIKE '%' || #{keyword} || '%' ESCAPE '\' OR email ILIKE '%' || #{keyword} || '%' ESCAPE '\')
             </if>
         </where>
     </select>

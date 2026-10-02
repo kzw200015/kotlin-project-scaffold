@@ -7,8 +7,9 @@ Spring Boot 4.1 + Kotlin 2.3 + MyBatis 脚手架，由 [start.spring.io](https:/
 | 用途 | 依赖 |
 | --- | --- |
 | Web | spring-boot-starter-webmvc、jackson-module-kotlin（Jackson 3） |
-| 并发 | 虚拟线程（`spring.threads.virtual.enabled=true`，Tomcat 请求线程与 `@Async` 等执行器均为虚拟线程）、kotlinx-coroutines（core + reactor，Spring 协程支持所需） |
+| 并发 | 虚拟线程（`spring.threads.virtual.enabled=true`，Tomcat 请求线程与 `@Async` 等执行器均为虚拟线程）、kotlinx-coroutines-core（配合 `Dispatchers.Virtual` 在一次调用内做并发） |
 | 数据访问 | mybatis-spring-boot-starter 4.1（XML mapper） |
+| 运维 | spring-boot-starter-actuator（默认只暴露 `/actuator/health`，供部署平台做健康检查） |
 | 迁移 | Flyway（`src/main/resources/db/migration`），当前表结构快照见 `db/schema.sql` |
 | 日志 | SLF4J + Logback（Spring Boot 默认）；惰性日志用 SLF4J 2 fluent API：`log.atDebug().log { "id=$id" }` |
 | 测试 | JUnit 5 + kotlin-test、Mockito + mockito-kotlin（`mock<T>()`、`whenever`），Spring 中替换 bean 用 `@MockitoBean`、`@MybatisTest`、Testcontainers |
@@ -27,6 +28,33 @@ export SPRING_DATASOURCE_PASSWORD=******
 ./gradlew bootTestRun   # 需要 Docker，用 Testcontainers 临时库启动应用（无需准备数据库）
 ./gradlew updateSchema  # 需要 Docker，迁移变更后更新 db/schema.sql
 ```
+
+## 接口约定
+
+示例见 `user/UserController.kt`、`user/UserService.kt`，基础设施在 `platform/`。
+
+**分层**：Controller（参数校验、组装响应）→ Service（业务逻辑、事务边界）→ Mapper（SQL）。Controller 不直接调用 Mapper。示例中直接返回记录类 `UserRecord`；表中有敏感字段（如密码哈希）时，需要单独定义响应类，避免字段随表结构泄露到接口。
+
+**统一响应**：所有接口返回 `ApiResponse`，Controller 中显式用 `ApiResponse.ok(...)` 包装：
+
+```json
+{"code": 0, "message": "ok", "data": {...}}
+{"code": 40401, "message": "user not found: id=9", "data": null}
+{"code": null, "message": null, "data": null}
+```
+
+- 成功：`code` 为 0，HTTP 200（创建为 201，用 `@ResponseStatus(HttpStatus.CREATED)`）；无返回数据时用 `ApiResponse.ok()`，`data` 为 `null`。
+- 分页：`data` 为 `Page`：`{"items": [...], "total": 3}`，页码从 1 开始。
+
+**错误**：只有业务错误带业务码和提示信息，其他错误只用 HTTP 状态码表达。
+
+- **业务错误**：抛 `AppException(code, message)`，HTTP 状态码由业务码推出。业务码为 5 位数，前三位即 HTTP 状态码（40401 → 404），后两位区分同一状态下的不同错误；`message` 原样返回给客户端，不要放内部细节。各领域把错误集中定义为直接抛出异常的函数（返回 `Nothing`），调用处写作 `mapper.findById(id) ?: UserErrors.notFound(id)`，见 `user/UserErrors.kt`。
+- **请求错误**：参数校验失败、请求体格式错误、参数类型不匹配、404、405、415 等，返回对应的 4xx 状态码，`code` 和 `message` 为 `null`（405、415 保留 `Allow`、`Accept` 响应头）。
+- **其他异常**：返回 500，`code` 和 `message` 为 `null`，不暴露细节，记录错误日志。
+
+`ErrorHandler` 只有一个 `@ExceptionHandler(Exception::class)` 方法，用 `when` 按异常类型决定 HTTP 状态码。Filter 等 Spring MVC 之外抛出的异常不经过它，由 Spring Boot 默认的 `/error` 处理。
+
+**唯一性校验**：依赖数据库唯一约束，捕获 `DuplicateKeyException` 转成业务错误，不先查再插（并发下会漏判），见 `UserService.create`。这种捕获只在没有外层事务时有效：PostgreSQL 中唯一约束冲突会让整个事务进入中止状态，之后同一事务内的 SQL 都会失败。需要在事务中途处理冲突时，改用 `INSERT ... ON CONFLICT DO NOTHING RETURNING ...`，根据是否返回行判断冲突。
 
 ## 表结构
 
@@ -47,6 +75,7 @@ SQL 统一写在 XML 中（不用 `@Select` 等注解：注解参数只能是编
 - **结果映射**：开启 `map-underscore-to-camel-case` 与 `arg-name-based-constructor-auto-mapping`，`resultType` 写 data class 全限定名即可按构造参数名映射，无需无参构造或 `resultMap`；有默认参数的 data class 需在构造函数上标 `@AutomapConstructor`。
 - **记录不可变**：data class 字段全部用 `val`。需要数据库生成值（自增 id、默认时间）的插入用 `INSERT ... RETURNING` 直接返回新行，而不是 `useGeneratedKeys` 回填参数对象；`<insert>` 只能返回影响行数，因此用 `<select flushCache="true">` 执行。
 - **可空性**：返回单行的方法声明为可空类型（如 `UserRecord?`），查不到时为 `null`。
+- **模糊查询**：`ILIKE` 拼接用户输入时，先用 `escapeLike()`（`platform/Sql.kt`）转义 `%`、`_`，SQL 中加 `ESCAPE '\'`，否则用户输入会被当成通配符。
 
 ## 事务约定
 
@@ -55,16 +84,18 @@ SQL 统一写在 XML 中（不用 `@Select` 等注解：注解参数只能是编
 ```kotlin
 @Service
 class UserService(private val tx: Tx, private val mapper: UserMapper) {
+    // 两步操作需要放在同一事务中
     fun rename(id: Long, name: String): UserRecord = tx.write {
-        check(mapper.updateName(id, name) == 1) { "用户不存在: $id" }
-        mapper.findById(id)!!
+        if (mapper.updateName(id, name) == 0) UserErrors.notFound(id)
+        mapper.findById(id) ?: UserErrors.notFound(id)
     }
 
-    fun find(id: Long): UserRecord? = tx.read { mapper.findById(id) }
+    // 单条语句不需要事务
+    fun get(id: Long): UserRecord = mapper.findById(id) ?: UserErrors.notFound(id)
 }
 ```
 
-- `write` / `read` 均为 REQUIRED 传播：已有事务则加入，否则新开；`read` 为只读事务，写操作会被数据库拒绝。
+- `write` / `read` 均为 REQUIRED 传播：已有事务则加入，否则新开；`read` 为只读事务，写操作会被数据库拒绝。只读不代表一致快照：默认 READ COMMITTED 下，事务内多条查询仍可能看到不同时刻的数据。
 - block 抛出任何异常（包括 checked 异常）都会回滚，异常原样抛出；不抛异常也要回滚时调用 `status.setRollbackOnly()`：`tx.write { status -> ... }`。
 - 只是单条语句、不需要原子性的读写可以不包事务（MyBatis 默认自动提交）。
 
@@ -73,15 +104,15 @@ class UserService(private val tx: Tx, private val mapper: UserMapper) {
 MyBatis / JDBC 是阻塞 IO，吞吐由虚拟线程解决；协程只用来在一次调用内做并发。
 
 - **Controller / Service 写普通函数**：请求跑在 Tomcat 虚拟线程上，事务用 `Tx` 显式开启（见上文「事务约定」）。
-- **不要写 `suspend` 的 Controller**：Spring MVC 以不指定调度器的方式执行 `suspend` 函数，挂起恢复后会跑在 kotlinx 内部的平台线程上，此时再调阻塞的 MyBatis 会卡住该线程；且 JDBC 事务绑定在线程上，挂起恢复换线程后事务就丢了。
+- **不要写 `suspend` 的 Controller**：Spring MVC 以不指定调度器的方式执行 `suspend` 函数，挂起恢复后跑在哪个线程由挂起点决定，不再是请求的虚拟线程，此时再调阻塞的 MyBatis 可能卡住非虚拟线程；且 JDBC 事务绑定在线程上，换线程后事务就丢了。项目没有引入 `kotlinx-coroutines-reactor`，写了 `suspend` Controller 会在调用时直接报错。
 - **需要并发时**用 `Dispatchers.Virtual`（`platform/Coroutines.kt`，每个任务一个虚拟线程）：
 
 ```kotlin
-fun dashboard(userId: Long): Dashboard = runBlocking(Dispatchers.Virtual) {
-    val profile = async { profileClient.get(userId) }
-    val orders = async { orderMapper.findByUserId(userId) }
+fun dashboard(userId: Long): Dashboard = runBlocking {
+    val profile = async(Dispatchers.Virtual) { profileClient.get(userId) }
+    val orders = async(Dispatchers.Virtual) { orderMapper.findByUserId(userId) }
     Dashboard(profile.await(), orders.await())
 }
 ```
 
-- **注意 ThreadLocal 不跟随**：`async` 里的代码运行在别的线程上，不在调用方的事务里，MDC、SecurityContext 也不会自动传递；需要事务的写操作放回调用方线程执行。
+- **注意 ThreadLocal 不跟随**：`runBlocking` 不带调度器，代码块本身仍在调用方线程上；只有 `async(Dispatchers.Virtual)` 里的代码运行在别的线程上，不在调用方的事务里，MDC、SecurityContext 也不会自动传递。需要事务的写操作放在 `async` 之外。不要写成 `runBlocking(Dispatchers.Virtual)`，那会把整个代码块都切到新线程。
