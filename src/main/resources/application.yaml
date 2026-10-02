@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: scaffold
+  threads:
+    virtual:
+      enabled: true
+  # 默认指向本地库；连开发库时用环境变量覆盖：SPRING_DATASOURCE_URL / SPRING_DATASOURCE_USERNAME / SPRING_DATASOURCE_PASSWORD
+  datasource:
+    url: jdbc:postgresql://localhost:5432/app
+    username: postgres
+    password: postgres
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+    # 按构造参数名映射列（依赖 javaParameters 编译选项），Kotlin data class 无需无参构造
+    arg-name-based-constructor-auto-mapping: true
