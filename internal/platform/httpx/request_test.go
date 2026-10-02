@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/kzw200015/go-project-template/internal/platform/apperr"
 )
 
 type userID int64
@@ -48,8 +50,8 @@ func TestPath(t *testing.T) {
 		t.Fatalf("got %v, %v", v, err)
 	}
 	_, err := Path[int64](newReq("abc"), "id")
-	if he, ok := errors.AsType[*Error](err); !ok || he.Status != http.StatusBadRequest || he.Message != "invalid id" {
-		t.Fatalf("want 400 invalid id, got %v", err)
+	if !errors.Is(err, apperr.ErrInvalidArg) || err.Error() != "invalid argument: invalid id" {
+		t.Fatalf("want ErrInvalidArg invalid id, got %v", err)
 	}
 }
 

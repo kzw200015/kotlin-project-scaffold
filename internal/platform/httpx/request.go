@@ -2,11 +2,14 @@ package httpx
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/kzw200015/go-project-template/internal/platform/apperr"
 )
 
 const maxBodyBytes = 1 << 20 // 1 MiB
@@ -19,21 +22,21 @@ type Scalar interface {
 		~float32 | ~float64
 }
 
-// DecodeJSON 把 JSON 请求体解析为 T，失败返回 400。
+// DecodeJSON 把 JSON 请求体解析为 T，失败返回 apperr.ErrInvalidArg。
 func DecodeJSON[T any](r *http.Request) (T, error) {
 	var v T
 	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxBodyBytes))
 	if err := dec.Decode(&v); err != nil {
-		return v, &Error{Status: http.StatusBadRequest, Message: "invalid json body", Err: err}
+		return v, fmt.Errorf("%w: invalid json body", apperr.ErrInvalidArg)
 	}
 	return v, nil
 }
 
-// Path 把路径参数解析为 T，失败返回 400。
+// Path 把路径参数解析为 T，失败返回 apperr.ErrInvalidArg。
 func Path[T Scalar](r *http.Request, key string) (T, error) {
 	v, err := parse[T](chi.URLParam(r, key))
 	if err != nil {
-		return v, &Error{Status: http.StatusBadRequest, Message: "invalid " + key, Err: err}
+		return v, fmt.Errorf("%w: invalid %s", apperr.ErrInvalidArg, key)
 	}
 	return v, nil
 }

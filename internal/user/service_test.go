@@ -48,7 +48,7 @@ func TestService_Create(t *testing.T) {
 		{name: "bad email", in: Input{Name: "alice", Email: "x"}, wantErr: apperr.ErrInvalidArg},
 		{
 			name: "duplicate", in: Input{Name: "alice", Email: "a@example.com"},
-			dbErr: &pgconn.PgError{Code: pgUniqueViolation}, wantErr: apperr.ErrConflict,
+			dbErr: &pgconn.PgError{Code: pgUniqueViolation}, wantErr: ErrEmailTaken,
 		},
 	}
 	for _, tt := range tests {

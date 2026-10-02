@@ -103,3 +103,29 @@ APP_DATABASE_DSN="postgres://..." APP_LOG_FORMAT=json ./bin/server -config confi
 | GET    | /api/v1/users/{id}   | 详情     |
 | PUT    | /api/v1/users/{id}   | 更新     |
 | DELETE | /api/v1/users/{id}   | 删除     |
+
+### 响应格式
+
+所有接口（含 404、405 与 panic）统一返回：
+
+```json
+{"code": 0, "message": "ok", "data": {}}
+```
+
+- `code`：业务码，`0` 表示成功；失败时为 5 位数，**前三位即 HTTP 状态码**（如 `40901` → 409）
+- `message`：提示信息。4xx 返回完整错误信息；5xx 只返回通用信息，细节仅记录日志
+- `data`：业务数据，失败时为 `null`
+
+通用错误码定义在 `internal/platform/apperr`：
+
+| code  | 含义 |
+| ----- | ---- |
+| 40000 | 参数错误 |
+| 40400 | 资源不存在 |
+| 40500 | 方法不允许 |
+| 40900 | 资源冲突 |
+| 50000 | 服务内部错误 |
+| 50300 | 服务不可用 |
+
+领域自定义错误码在各领域包内定义，例如 `user.ErrEmailTaken = apperr.New(40901, "email already registered")`。
+handler 返回错误时可用 `%w` 补充细节：`fmt.Errorf("%w: name is required", apperr.ErrInvalidArg)`。

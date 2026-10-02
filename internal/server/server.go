@@ -24,8 +24,11 @@ func NewRouter(cfg *config.Config, log *slog.Logger, healthH *health.Handler, us
 	r.Use(middleware.RequestID)
 	r.Use(clientIP(cfg.Server.ClientIPHeader))
 	r.Use(httpx.RequestLogger(log))
-	r.Use(middleware.Recoverer)
+	r.Use(httpx.Recoverer(log))
 	r.Use(middleware.Timeout(30 * time.Second))
+
+	r.NotFound(httpx.NotFound(log))
+	r.MethodNotAllowed(httpx.MethodNotAllowed(log))
 
 	healthH.Register(r)
 

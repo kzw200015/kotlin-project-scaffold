@@ -15,6 +15,9 @@ import (
 
 const pgUniqueViolation = "23505"
 
+// 用户领域错误。
+var ErrEmailTaken = apperr.New(40901, "email already registered")
+
 // Service 只依赖 db.Querier 接口，便于单测替换。
 type Service struct {
 	q db.Querier
@@ -92,8 +95,9 @@ func mapErr(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return apperr.ErrNotFound
 	}
+	// users 表上唯一的唯一约束是 email。
 	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgUniqueViolation {
-		return apperr.ErrConflict
+		return ErrEmailTaken
 	}
 	return err
 }

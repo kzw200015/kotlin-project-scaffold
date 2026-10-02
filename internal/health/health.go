@@ -3,6 +3,7 @@ package health
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/wire"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/kzw200015/go-project-template/internal/platform/apperr"
 	"github.com/kzw200015/go-project-template/internal/platform/httpx"
 )
 
@@ -41,7 +43,7 @@ func (h *Handler) ready(r *http.Request) (any, error) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 	if err := h.pool.Ping(ctx); err != nil {
-		return nil, &httpx.Error{Status: http.StatusServiceUnavailable, Message: "database unavailable", Err: err}
+		return nil, fmt.Errorf("%w: database: %w", apperr.ErrUnavailable, err)
 	}
 	return map[string]string{"status": "ok"}, nil
 }
