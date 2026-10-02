@@ -32,11 +32,11 @@ func (h *Handler) Routes() chi.Router {
 }
 
 func (h *Handler) list(r *http.Request) (any, error) {
-	return h.svc.List(r.Context(), httpx.QueryInt32(r, "limit", 20), httpx.QueryInt32(r, "offset", 0))
+	return h.svc.List(r.Context(), httpx.Query[int32](r, "limit", 20), httpx.Query[int32](r, "offset", 0))
 }
 
 func (h *Handler) get(r *http.Request) (any, error) {
-	id, err := httpx.PathInt64(r, "id")
+	id, err := httpx.Path[int64](r, "id")
 	if err != nil {
 		return nil, err
 	}
@@ -44,8 +44,8 @@ func (h *Handler) get(r *http.Request) (any, error) {
 }
 
 func (h *Handler) create(r *http.Request) (any, error) {
-	var in Input
-	if err := httpx.DecodeJSON(r, &in); err != nil {
+	in, err := httpx.DecodeJSON[Input](r)
+	if err != nil {
 		return nil, err
 	}
 	u, err := h.svc.Create(r.Context(), in)
@@ -56,19 +56,19 @@ func (h *Handler) create(r *http.Request) (any, error) {
 }
 
 func (h *Handler) update(r *http.Request) (any, error) {
-	id, err := httpx.PathInt64(r, "id")
+	id, err := httpx.Path[int64](r, "id")
 	if err != nil {
 		return nil, err
 	}
-	var in Input
-	if err := httpx.DecodeJSON(r, &in); err != nil {
+	in, err := httpx.DecodeJSON[Input](r)
+	if err != nil {
 		return nil, err
 	}
 	return h.svc.Update(r.Context(), id, in)
 }
 
 func (h *Handler) delete(r *http.Request) (any, error) {
-	id, err := httpx.PathInt64(r, "id")
+	id, err := httpx.Path[int64](r, "id")
 	if err != nil {
 		return nil, err
 	}
