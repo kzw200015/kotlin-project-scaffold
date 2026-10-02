@@ -11,6 +11,7 @@ spring:
     password: postgres
 
 mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
   configuration:
     map-underscore-to-camel-case: true
     # 按构造参数名映射列（依赖 javaParameters 编译选项），Kotlin data class 无需无参构造

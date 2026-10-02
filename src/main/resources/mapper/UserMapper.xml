@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.scaffold.user.UserMapper">
+
+    <!-- INSERT ... RETURNING 有结果集，需用 select 执行；flushCache 清掉一级缓存，避免之后读到旧数据 -->
+    <select id="insert" resultType="com.example.scaffold.user.UserRecord" flushCache="true">
+        INSERT INTO users (name, email)
+        VALUES (#{name}, #{email})
+        RETURNING id, name, email, created_at
+    </select>
+
+    <select id="findById" resultType="com.example.scaffold.user.UserRecord">
+        SELECT id, name, email, created_at
+        FROM users
+        WHERE id = #{id}
+    </select>
+
+    <select id="search" resultType="com.example.scaffold.user.UserRecord">
+        SELECT id, name, email, created_at
+        FROM users
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (name ILIKE '%' || #{keyword} || '%' OR email ILIKE '%' || #{keyword} || '%')
+            </if>
+        </where>
+        ORDER BY id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT count(*)
+        FROM users
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (name ILIKE '%' || #{keyword} || '%' OR email ILIKE '%' || #{keyword} || '%')
+            </if>
+        </where>
+    </select>
+
+    <update id="updateName">
+        UPDATE users
+        SET name = #{name}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM users
+        WHERE id = #{id}
+    </delete>
+</mapper>

@@ -1,18 +1,12 @@
 package com.example.scaffold.user
 
 import com.example.scaffold.TestcontainersConfiguration
-import com.example.scaffold.user.UserDynamicSqlSupport.email
-import com.example.scaffold.user.UserDynamicSqlSupport.id
-import com.example.scaffold.user.UserDynamicSqlSupport.name
 import org.junit.jupiter.api.Test
-import org.mybatis.dynamic.sql.util.kotlin.elements.isEqualTo
-import org.mybatis.dynamic.sql.util.kotlin.elements.isLike
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.context.annotation.Import
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 @MybatisTest
@@ -21,36 +15,33 @@ import kotlin.test.assertNull
 class UserMapperTests(@Autowired private val mapper: UserMapper) {
 
 	@Test
-	fun `insert backfills generated columns`() {
-		val row = UserRecord(name = "alice", email = "alice@example.com")
+	fun `insert returns the new row`() {
+		val row = mapper.insert("alice", "alice@example.com")
 
-		assertEquals(1, mapper.insert(row))
-
-		val id = assertNotNull(row.id)
-		assertNotNull(row.createdAt)
-		assertEquals(row, mapper.selectById(id))
+		assertEquals("alice", row.name)
+		assertEquals("alice@example.com", row.email)
+		assertEquals(row, mapper.findById(row.id))
 	}
 
 	@Test
-	fun `select, update and delete with kotlin dsl`() {
-		mapper.insert(UserRecord(name = "bob", email = "bob@example.com"))
-		mapper.insert(UserRecord(name = "carol", email = "carol@example.com"))
+	fun `search filters by keyword and pages`() {
+		listOf("bob", "carol", "dave").forEach { mapper.insert(it, "$it@example.com") }
 
-		val rows = mapper.select {
-			where { email isLike "%@example.com" }
-			orderBy(name)
-		}
-		assertEquals(listOf("bob", "carol"), rows.map { it.name })
+		assertEquals(listOf("bob", "carol"), mapper.search(keyword = null, limit = 2, offset = 0).map { it.name })
+		assertEquals(listOf("dave"), mapper.search(keyword = null, limit = 2, offset = 2).map { it.name })
+		assertEquals(listOf("carol"), mapper.search(keyword = "CAR", limit = 10, offset = 0).map { it.name })
+		assertEquals(3, mapper.count(keyword = ""))
+		assertEquals(1, mapper.count(keyword = "dave@"))
+	}
 
-		val bobId = rows.first().id!!
-		mapper.update {
-			set(name) equalTo "robert"
-			where { id isEqualTo bobId }
-		}
-		assertEquals("robert", mapper.selectById(bobId)?.name)
+	@Test
+	fun `update and delete by id`() {
+		val id = mapper.insert("bob", "bob@example.com").id
 
-		assertEquals(1, mapper.delete { where { id isEqualTo bobId } })
-		assertNull(mapper.selectById(bobId))
-		assertEquals(1, mapper.count { allRows() })
+		assertEquals(1, mapper.updateName(id, "robert"))
+		assertEquals("robert", mapper.findById(id)?.name)
+
+		assertEquals(1, mapper.deleteById(id))
+		assertNull(mapper.findById(id))
 	}
 }

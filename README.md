@@ -8,7 +8,7 @@ Spring Boot 4.1 + Kotlin 2.3 + MyBatis 脚手架，由 [start.spring.io](https:/
 | --- | --- |
 | Web | spring-boot-starter-webmvc、jackson-module-kotlin（Jackson 3） |
 | 并发 | 虚拟线程（`spring.threads.virtual.enabled=true`，Tomcat 请求线程与 `@Async` 等执行器均为虚拟线程）、kotlinx-coroutines（core + reactor，Spring 协程支持所需） |
-| 数据访问 | mybatis-spring-boot-starter 4.1、mybatis-dynamic-sql 2.0（Kotlin DSL，类型安全的 SQL 构建） |
+| 数据访问 | mybatis-spring-boot-starter 4.1（XML mapper） |
 | 迁移 | Flyway（`src/main/resources/db/migration`） |
 | 日志 | SLF4J + Logback（Spring Boot 默认）；惰性日志用 SLF4J 2 fluent API：`log.atDebug().log { "id=$id" }` |
 | 测试 | JUnit 5 + kotlin-test、Mockito + mockito-kotlin（`mock<T>()`、`whenever`），Spring 中替换 bean 用 `@MockitoBean`、`@MybatisTest`、Testcontainers |
@@ -29,19 +29,14 @@ export SPRING_DATASOURCE_PASSWORD=******
 
 ## MyBatis 约定
 
-示例见 `src/main/kotlin/com/example/scaffold/user`：
+SQL 统一写在 XML 中（不用 `@Select` 等注解：注解参数只能是编译期常量，SQL 字符串无法做任何处理，动态 SQL 还要在字符串里写 `<script>`），示例见 `user/UserMapper.kt` 与 `resources/mapper/UserMapper.xml`。
 
-- `UserDynamicSqlSupport`：表与列的元模型（`AliasableSqlTable` + `column<T>()`）
-- `UserMapper`：mapper 接口只声明 `@SelectProvider` / `@InsertProvider` 等基础方法，查询通过扩展函数用 Kotlin DSL 编写：
-
-```kotlin
-mapper.select {
-    where { email isLike "%@example.com" }
-    orderBy(name)
-}
-```
-
-- 结果映射：开启 `map-underscore-to-camel-case` 与 `arg-name-based-constructor-auto-mapping`，并配合 Kotlin 的 `javaParameters` 编译选项，data class 直接按构造参数名映射，无需无参构造或 XML resultMap。
+- **接口**：普通 Kotlin 接口加 `@Mapper`，启动时自动扫描注册为 bean。多个参数不需要 `@Param`，XML 中直接按参数名引用（`#{keyword}`、`#{limit}`），依赖 `javaParameters` 编译选项。
+- **XML**：放在 `resources/mapper/` 下（`mybatis.mapper-locations`），`namespace` 为接口全限定名，语句 `id` 与方法名一致；动态条件用 `<where>` / `<if>` / `<foreach>`。
+- **完整 SQL**：每条语句写完整 SQL，不用 `<sql>` / `<include>` 抽取片段（重复的列清单、条件直接写出来，SQL 所见即所得、可直接复制到数据库客户端执行）。
+- **结果映射**：开启 `map-underscore-to-camel-case` 与 `arg-name-based-constructor-auto-mapping`，`resultType` 写 data class 全限定名即可按构造参数名映射，无需无参构造或 `resultMap`；有默认参数的 data class 需在构造函数上标 `@AutomapConstructor`。
+- **记录不可变**：data class 字段全部用 `val`。需要数据库生成值（自增 id、默认时间）的插入用 `INSERT ... RETURNING` 直接返回新行，而不是 `useGeneratedKeys` 回填参数对象；`<insert>` 只能返回影响行数，因此用 `<select flushCache="true">` 执行。
+- **可空性**：返回单行的方法声明为可空类型（如 `UserRecord?`），查不到时为 `null`。
 
 ## 事务约定
 
@@ -50,13 +45,12 @@ mapper.select {
 ```kotlin
 @Service
 class UserService(private val tx: Tx, private val mapper: UserMapper) {
-    fun register(name: String, email: String): UserRecord = tx.write {
-        val row = UserRecord(name = name, email = email)
-        mapper.insert(row)
-        row
+    fun rename(id: Long, name: String): UserRecord = tx.write {
+        check(mapper.updateName(id, name) == 1) { "用户不存在: $id" }
+        mapper.findById(id)!!
     }
 
-    fun find(id: Long): UserRecord? = tx.read { mapper.selectById(id) }
+    fun find(id: Long): UserRecord? = tx.read { mapper.findById(id) }
 }
 ```
 
@@ -68,14 +62,14 @@ class UserService(private val tx: Tx, private val mapper: UserMapper) {
 
 MyBatis / JDBC 是阻塞 IO，吞吐由虚拟线程解决；协程只用来在一次调用内做并发。
 
-- **Controller / Service 写普通函数**：请求跑在 Tomcat 虚拟线程上，事务用 `Tx` 显式开启（见下文「事务约定」）。
+- **Controller / Service 写普通函数**：请求跑在 Tomcat 虚拟线程上，事务用 `Tx` 显式开启（见上文「事务约定」）。
 - **不要写 `suspend` 的 Controller**：Spring MVC 以不指定调度器的方式执行 `suspend` 函数，挂起恢复后会跑在 kotlinx 内部的平台线程上，此时再调阻塞的 MyBatis 会卡住该线程；且 JDBC 事务绑定在线程上，挂起恢复换线程后事务就丢了。
 - **需要并发时**用 `Dispatchers.Virtual`（`platform/Coroutines.kt`，每个任务一个虚拟线程）：
 
 ```kotlin
 fun dashboard(userId: Long): Dashboard = runBlocking(Dispatchers.Virtual) {
     val profile = async { profileClient.get(userId) }
-    val orders = async { orderMapper.select { where { OrderDynamicSqlSupport.userId isEqualTo userId } } }
+    val orders = async { orderMapper.findByUserId(userId) }
     Dashboard(profile.await(), orders.await())
 }
 ```
