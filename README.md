@@ -52,7 +52,12 @@ export SPRING_DATASOURCE_PASSWORD=******
 - **请求错误**：参数校验失败、请求体格式错误、参数类型不匹配、404、405、415 等，返回对应的 4xx 状态码，`code` 和 `message` 为 `null`（405、415 保留 `Allow`、`Accept` 响应头）。
 - **其他异常**：返回 500，`code` 和 `message` 为 `null`，不暴露细节，记录错误日志。
 
-`ErrorHandler` 只有一个 `@ExceptionHandler(Exception::class)` 方法，用 `when` 按异常类型决定 HTTP 状态码。Filter 等 Spring MVC 之外抛出的异常不经过它，由 Spring Boot 默认的 `/error` 处理。
+`ErrorHandler`（`platform/ErrorHandler.kt`）是所有错误的统一出口，有两个入口：
+
+- **`handle`**：Controller 抛出的异常（`@ExceptionHandler(Exception::class)`），用 `when` 按异常类型决定 HTTP 状态码。
+- **`error`**：接管 Spring Boot 默认的 `/error`。没经过 Controller 的错误（Filter 中抛出的异常、调用 `sendError`、Tomcat 直接返回的错误）由 Tomcat 转发到这里：有异常时交给 `handle`，同样按异常类型处理；只有状态码时原样返回。Filter 中抛出的异常 Tomcat 会以 ERROR 级别记录日志（包括 `AppException`），Filter 里的 4xx 错误更适合直接写响应或调用 `sendError`，或改用 `HandlerInterceptor`（运行在 Spring MVC 内部，异常由 `handle` 处理）。
+
+Tomcat 在解析阶段就拒绝的非法请求（如格式错误的请求行）不经过 Spring，兜不住，这类请求基本只来自扫描器。
 
 **唯一性校验**：依赖数据库唯一约束，捕获 `DuplicateKeyException` 转成业务错误，不先查再插（并发下会漏判），见 `UserService.create`。这种捕获只在没有外层事务时有效：PostgreSQL 中唯一约束冲突会让整个事务进入中止状态，之后同一事务内的 SQL 都会失败。需要在事务中途处理冲突时，改用 `INSERT ... ON CONFLICT DO NOTHING RETURNING ...`，根据是否返回行判断冲突。
 
