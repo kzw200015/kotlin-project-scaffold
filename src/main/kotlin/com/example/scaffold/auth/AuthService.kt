@@ -1,6 +1,7 @@
 package com.example.scaffold.auth
 
 import com.example.scaffold.user.UserMapper
+import com.example.scaffold.user.normalizeEmail
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 
@@ -15,11 +16,10 @@ class AuthService(
 
 	/** 校验邮箱和密码，签发 token。 */
 	fun login(email: String, password: String): AccessToken {
-		val credential = mapper.findCredentialByEmail(email)
-		val hash = credential?.passwordHash
-		// 用户不存在或未设置密码时也做一次哈希比对，避免通过响应时间判断邮箱是否已注册
-		val matched = passwordEncoder.matches(password, hash ?: dummyHash)
-		if (credential == null || hash == null || !matched) AuthErrors.badCredentials()
+		val credential = mapper.findCredentialByEmail(normalizeEmail(email))
+		// 用户不存在时也做一次哈希比对，避免通过响应时间判断邮箱是否已注册
+		val matched = passwordEncoder.matches(password, credential?.passwordHash ?: dummyHash)
+		if (credential == null || !matched) AuthErrors.badCredentials()
 		return tokenService.issue(credential.id)
 	}
 

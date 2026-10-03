@@ -1,23 +1,24 @@
 package com.example.scaffold.auth
 
-import com.example.scaffold.RedisTestcontainersConfiguration
-import com.example.scaffold.TestcontainersConfiguration
+import com.example.scaffold.PostgresContainer
+import com.example.scaffold.RedisContainer
 import com.example.scaffold.delete
 import com.example.scaffold.forbidden
 import com.example.scaffold.get
-import com.example.scaffold.platform.Role
 import com.example.scaffold.unauthorized
 import com.example.scaffold.user.UserMapper
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient
 import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.context.annotation.Import
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.http.MediaType
 import org.springframework.test.context.jdbc.Sql
 import org.springframework.test.json.JsonCompareMode
 import org.springframework.test.web.servlet.client.RestTestClient
+import org.springframework.test.web.servlet.client.returnResult
+import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -27,14 +28,20 @@ import kotlin.test.assertTrue
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureRestTestClient
-@Import(TestcontainersConfiguration::class, RedisTestcontainersConfiguration::class)
 @Sql(statements = ["DELETE FROM users"], executionPhase = Sql.ExecutionPhase.AFTER_TEST_METHOD)
 class AuthTests(
 	@Autowired private val client: RestTestClient,
 	@Autowired private val users: UserMapper,
+	@Autowired private val roles: RoleMapper,
 	@Autowired private val redis: StringRedisTemplate,
 	@Autowired private val props: AuthProperties,
-) {
+) : PostgresContainer, RedisContainer {
+	/** 数据库由 @Sql 清理；会话也一并清掉，避免残留的 token 影响其他测试。 */
+	@AfterEach
+	fun clearSessions() {
+		redis.delete(redis.keys("auth:token:*"))
+	}
+
 	@Test
 	fun 注册登录后可以访问需要登录的接口() {
 		client.register("alice@example.com")
@@ -42,6 +49,13 @@ class AuthTests(
 		client.get("/api/v1/users/me", client.token("alice@example.com"))
 			.expectStatus().isOk()
 			.expectBody().jsonPath("$.email").isEqualTo("alice@example.com")
+	}
+
+	@Test
+	fun 登录时邮箱不区分大小写() {
+		client.register("alice@example.com")
+
+		client.login(" Alice@Example.COM ", PASSWORD).expectStatus().isOk()
 	}
 
 	@Test
@@ -90,7 +104,7 @@ class AuthTests(
 			.expectHeader().valueMatches("WWW-Authenticate", ".*insufficient_scope.*")
 			.expectBody().json(forbidden("/api/v1/users/$bobId"), JsonCompareMode.STRICT)
 
-		users.addRole(aliceId, Role.ADMIN)
+		roles.add(aliceId, Role.ADMIN)
 		// 不用重新登录：角色在每个请求时从数据库加载
 		client.delete("/api/v1/users/$bobId", token).expectStatus().isNoContent()
 	}
@@ -113,11 +127,15 @@ class AuthTests(
 	@Test
 	fun Redis中只存token的哈希并按有效期自动过期() {
 		val id = client.register("alice@example.com")
-		val token = client.token("alice@example.com")
+		val issuedAfter = Instant.now()
+		val (token, expiresAt) = client.login("alice@example.com", PASSWORD)
+			.expectStatus().isOk().returnResult<AccessToken>().responseBody!!
 
 		assertTrue(redis.keys("*").none { token in it })
 		assertEquals(id.toString(), redis.opsForValue().get(tokenKey(token)))
 		assertTrue(redis.getExpire(tokenKey(token)) in 1..props.ttl.seconds)
+		// 返回给客户端的过期时间与 Redis 中一致：签发时刻 + 有效期
+		assertTrue(expiresAt in (issuedAfter + props.ttl)..(Instant.now() + props.ttl))
 	}
 
 	@Test

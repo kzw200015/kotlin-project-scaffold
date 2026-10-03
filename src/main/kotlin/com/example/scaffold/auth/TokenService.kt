@@ -1,6 +1,5 @@
 package com.example.scaffold.auth
 
-import com.example.scaffold.user.UserMapper
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.security.core.authority.SimpleGrantedAuthority
@@ -22,12 +21,12 @@ import java.util.HexFormat
  * 过期时间为 `app.auth.ttl`，到期由 Redis 自动删除。
  *
  * 同时是 Spring Security 的 [OpaqueTokenIntrospector]（见 SecurityConfig）：每个请求查 Redis 得到用户 id，
- * 再从数据库加载用户和角色，所以改角色、删除用户立即生效。
+ * 再用一条查询确认用户存在并加载角色，所以改角色、删除用户立即生效。
  */
 @Service
 class TokenService(
 	private val redis: StringRedisTemplate,
-	private val users: UserMapper,
+	private val roles: RoleMapper,
 	private val props: AuthProperties,
 ) : OpaqueTokenIntrospector {
 	private val keyGenerator = Base64StringKeyGenerator(Base64.getUrlEncoder().withoutPadding(), 32)
@@ -46,12 +45,15 @@ class TokenService(
 
 	/** 校验请求携带的 token。查不到（不存在、已过期、已注销）或用户已删除时抛出 BadOpaqueTokenException，由入口点返回 401 invalid_token。 */
 	override fun introspect(token: String): OAuth2AuthenticatedPrincipal {
-		val userId = redis.opsForValue().get(tokenKey(token))?.toLong()
-		if (userId == null || users.findById(userId) == null) throw BadOpaqueTokenException("invalid or expired token")
-		val authorities = users.findRoles(userId).map { SimpleGrantedAuthority("ROLE_${it.name}") }
+		val userId = redis.opsForValue().get(tokenKey(token))?.toLong() ?: throw invalidToken()
+		// 用户已删除时为空列表
+		val authorities = roles.findByUserId(userId).ifEmpty { throw invalidToken() }
+			.filterNotNull().map { SimpleGrantedAuthority("ROLE_${it.name}") }
 		// sub 即 authentication.name
 		return DefaultOAuth2AuthenticatedPrincipal(mapOf(OAuth2TokenIntrospectionClaimNames.SUB to userId.toString()), authorities)
 	}
+
+	private fun invalidToken() = BadOpaqueTokenException("invalid or expired token")
 }
 
 data class AccessToken(val token: String, val expiresAt: Instant)

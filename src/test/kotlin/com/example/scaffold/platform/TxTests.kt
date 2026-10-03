@@ -1,6 +1,6 @@
 package com.example.scaffold.platform
 
-import com.example.scaffold.TestcontainersConfiguration
+import com.example.scaffold.PostgresContainer
 import com.example.scaffold.user.UserMapper
 import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
@@ -15,13 +15,13 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 @MybatisTest
-@Import(Tx::class, TestcontainersConfiguration::class)
+@Import(Tx::class)
 @Transactional(propagation = Propagation.NOT_SUPPORTED) // 关闭测试默认的回滚事务，才能观察到真实的提交与回滚
 @Sql(statements = ["DELETE FROM users"], executionPhase = Sql.ExecutionPhase.AFTER_TEST_METHOD)
 class TxTests(
 	@Autowired private val tx: Tx,
 	@Autowired private val mapper: UserMapper,
-) {
+) : PostgresContainer {
 
 	@Test
 	fun 写事务提交并返回代码块结果() {

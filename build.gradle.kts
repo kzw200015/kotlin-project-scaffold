@@ -62,6 +62,8 @@ tasks.withType<Test>().configureEach {
 tasks.test {
 	// 快照变化时重新跑测试（SchemaSnapshotTests 会读取它）
 	inputs.files("db/schema.sql").withPropertyName("schemaSnapshot")
+	// 同一次构建中先更新快照再比对，如 ./gradlew updateSchema test
+	mustRunAfter("updateSchema")
 }
 
 tasks.register<Test>("updateSchema") {
@@ -71,5 +73,6 @@ tasks.register<Test>("updateSchema") {
 	classpath = sourceSets.test.get().runtimeClasspath
 	filter { includeTestsMatching("com.example.scaffold.SchemaSnapshotTests") }
 	systemProperty("schema.update", "true")
+	outputs.file("db/schema.sql").withPropertyName("schemaSnapshot")
 	outputs.upToDateWhen { false }
 }

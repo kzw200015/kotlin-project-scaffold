@@ -1,7 +1,6 @@
 package com.example.scaffold.user
 
 import com.example.scaffold.platform.Page
-import com.example.scaffold.platform.Role
 import com.example.scaffold.platform.Tx
 import com.example.scaffold.platform.escapeLike
 import org.springframework.dao.DuplicateKeyException
@@ -15,13 +14,15 @@ class UserService(private val tx: Tx, private val mapper: UserMapper, private va
 	 * 单条 INSERT 本身是原子的，不需要事务。邮箱重复靠唯一约束判断，而不是先查再插（并发下会漏判）。
 	 * 注意：在外层事务中调用时，PostgreSQL 唯一约束冲突会让整个事务进入中止状态，这里的捕获救不回外层事务。
 	 */
-	fun create(name: String, email: String, password: String): UserRecord =
-		try {
+	fun create(name: String, email: String, password: String): UserRecord {
+		val normalizedEmail = normalizeEmail(email)
+		return try {
 			// encode 只在入参为 null 时返回 null
-			mapper.insert(name, email, checkNotNull(passwordEncoder.encode(password)))
+			mapper.insert(name, normalizedEmail, checkNotNull(passwordEncoder.encode(password)))
 		} catch (e: DuplicateKeyException) {
-			UserErrors.emailTaken(email, e)
+			UserErrors.emailTaken(normalizedEmail, e)
 		}
+	}
 
 	fun get(id: Long): UserRecord =
 		mapper.findById(id) ?: UserErrors.notFound(id)
@@ -43,20 +44,7 @@ class UserService(private val tx: Tx, private val mapper: UserMapper, private va
 	fun delete(id: Long) {
 		if (mapper.deleteById(id) == 0) UserErrors.notFound(id)
 	}
-
-	/** 授予角色，已有时不变。下一个请求即生效：角色在每个请求时从数据库加载（见 TokenService）。 */
-	fun grantRole(id: Long, role: Role) {
-		tx.write {
-			get(id)
-			mapper.addRole(id, role)
-		}
-	}
-
-	/** 移除角色，没有该角色时不变。与 [grantRole] 一样立即生效。 */
-	fun revokeRole(id: Long, role: Role) {
-		tx.write {
-			get(id)
-			mapper.removeRole(id, role)
-		}
-	}
 }
+
+/** 邮箱去掉首尾空白并转小写后再入库和查询，唯一约束与登录都不区分大小写。 */
+fun normalizeEmail(email: String): String = email.trim().lowercase()

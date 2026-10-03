@@ -1,4 +1,4 @@
-package com.example.scaffold.platform
+package com.example.scaffold.auth
 
 /**
  * 角色，存在 `user_roles` 表中，鉴权时转成 `ROLE_` 前缀的权限（如 `ROLE_ADMIN`），供 `hasRole("ADMIN")` 判断。

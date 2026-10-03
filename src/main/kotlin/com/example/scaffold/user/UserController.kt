@@ -1,7 +1,6 @@
 package com.example.scaffold.user
 
 import com.example.scaffold.platform.Page
-import com.example.scaffold.platform.Role
 import com.example.scaffold.platform.userId
 import jakarta.validation.Valid
 import jakarta.validation.constraints.AssertTrue
@@ -18,7 +17,6 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
@@ -66,20 +64,6 @@ class UserController(private val service: UserService) {
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	fun delete(@PathVariable id: Long) {
 		service.delete(id)
-	}
-
-	/** 授予角色，需要管理员（见 SecurityConfig）；已有该角色时不变。 */
-	@PutMapping("/{id}/roles/{role}")
-	@ResponseStatus(HttpStatus.NO_CONTENT)
-	fun grantRole(@PathVariable id: Long, @PathVariable role: Role) {
-		service.grantRole(id, role)
-	}
-
-	/** 移除角色，需要管理员（见 SecurityConfig）；没有该角色时不变。 */
-	@DeleteMapping("/{id}/roles/{role}")
-	@ResponseStatus(HttpStatus.NO_CONTENT)
-	fun revokeRole(@PathVariable id: Long, @PathVariable role: Role) {
-		service.revokeRole(id, role)
 	}
 }
 

@@ -1,7 +1,8 @@
 package com.example.scaffold.user
 
-import com.example.scaffold.platform.Role
-import com.example.scaffold.platform.SecurityConfig
+import com.example.scaffold.asAdmin
+import com.example.scaffold.asUser
+import com.example.scaffold.auth.SecurityConfig
 import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.verify
@@ -11,7 +12,6 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
-import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.server.resource.introspection.OpaqueTokenIntrospector
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.opaqueToken
 import org.springframework.test.context.bean.override.mockito.MockitoBean
@@ -54,7 +54,7 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	fun 获取当前登录用户() {
 		whenever(service.get(1)).thenReturn(alice)
 
-		mvc.get("/api/v1/users/me") { with(user(1)) }.andExpect {
+		mvc.get("/api/v1/users/me") { with(asUser(1)) }.andExpect {
 			status { isOk() }
 			jsonPath("$.email") { value("alice@example.com") }
 		}
@@ -62,28 +62,17 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 
 	@Test
 	fun 删除成功返回204且没有响应体() {
-		mvc.delete("/api/v1/users/1") { with(admin()) }.andExpect {
+		mvc.delete("/api/v1/users/1") { with(asAdmin()) }.andExpect {
 			status { isNoContent() }
 			content { string("") }
 		}
+
+		verify(service).delete(1)
 	}
 
 	@Test
-	fun 管理员授予和移除角色() {
-		mvc.put("/api/v1/users/2/roles/ADMIN") { with(admin()) }.andExpect { status { isNoContent() } }
-		mvc.delete("/api/v1/users/2/roles/ADMIN") { with(admin()) }.andExpect { status { isNoContent() } }
-		// 不存在的角色名
-		mvc.put("/api/v1/users/2/roles/ROOT") { with(admin()) }.andExpect { status { isBadRequest() } }
-
-		verify(service).grantRole(2, Role.ADMIN)
-		verify(service).revokeRole(2, Role.ADMIN)
-	}
-
-	@Test
-	fun 普通用户不能删除用户和管理角色() {
-		mvc.delete("/api/v1/users/2") { with(user(1)) }.andExpect { status { isForbidden() } }
-		mvc.put("/api/v1/users/2/roles/ADMIN") { with(user(1)) }.andExpect { status { isForbidden() } }
-		mvc.delete("/api/v1/users/2/roles/ADMIN") { with(user(1)) }.andExpect { status { isForbidden() } }
+	fun 普通用户不能删除用户() {
+		mvc.delete("/api/v1/users/2") { with(asUser(1)) }.andExpect { status { isForbidden() } }
 
 		verifyNoInteractions(service)
 	}
@@ -92,9 +81,9 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	fun 只能改自己的名字_管理员可以改任何人() {
 		whenever(service.rename(1, "robert")).thenReturn(alice)
 
-		rename(1, user(2)).andExpect { status { isForbidden() } }
-		rename(1, user(1)).andExpect { status { isOk() } }
-		rename(1, admin()).andExpect { status { isOk() } }
+		rename(1, asUser(2)).andExpect { status { isForbidden() } }
+		rename(1, asUser(1)).andExpect { status { isOk() } }
+		rename(1, asAdmin()).andExpect { status { isOk() } }
 	}
 
 	@Test
@@ -171,10 +160,4 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 		contentType = MediaType.APPLICATION_JSON
 		content = """{"name": "robert"}"""
 	}
-
-	/** 没有角色的普通用户，sub 即 authentication.name。 */
-	private fun user(id: Long) = opaqueToken().attributes { it["sub"] = id.toString() }
-
-	/** 管理员。opaqueToken() 直接放入认证结果，不经过 TokenService 加载角色，需要直接给出权限。 */
-	private fun admin() = user(9).authorities(SimpleGrantedAuthority("ROLE_ADMIN"))
 }

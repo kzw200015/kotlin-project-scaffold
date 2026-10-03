@@ -2,9 +2,6 @@ package com.example.scaffold
 
 import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
-import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.context.annotation.Import
-import org.testcontainers.postgresql.PostgreSQLContainer
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
@@ -16,8 +13,7 @@ import kotlin.test.assertEquals
  * 校验 db/schema.sql 与 Flyway 迁移后的真实表结构一致；表结构变更后执行 `./gradlew updateSchema` 重新生成。
  */
 @MybatisTest
-@Import(TestcontainersConfiguration::class)
-class SchemaSnapshotTests(@Autowired private val postgres: PostgreSQLContainer) {
+class SchemaSnapshotTests : PostgresContainer {
 
 	private val snapshot = Path.of("db/schema.sql")
 
@@ -37,6 +33,7 @@ class SchemaSnapshotTests(@Autowired private val postgres: PostgreSQLContainer) 
 
 	/** 用容器内的 pg_dump 导出表结构（版本与数据库一致），去掉会话设置、注释等与结构无关的行。 */
 	private fun dumpSchema(): String {
+		val postgres = PostgresContainer.postgres
 		val result = postgres.execInContainer(
 			"pg_dump", "--username", postgres.username, "--dbname", postgres.databaseName,
 			"--schema-only", "--no-owner", "--no-privileges", "--exclude-table=flyway_schema_history",

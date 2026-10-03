@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.scaffold.auth.RoleMapper">
+
+    <!-- LEFT JOIN：用户存在但没有角色时也返回一行（role 为 NULL），用户不存在时没有行 -->
+    <select id="findByUserId" resultType="com.example.scaffold.auth.Role">
+        SELECT r.role
+        FROM users u
+                 LEFT JOIN user_roles r ON r.user_id = u.id
+        WHERE u.id = #{userId}
+        ORDER BY r.role
+    </select>
+
+    <insert id="add">
+        INSERT INTO user_roles (user_id, role)
+        VALUES (#{userId}, #{role})
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <delete id="remove">
+        DELETE FROM user_roles
+        WHERE user_id = #{userId}
+          AND role = #{role}
+    </delete>
+</mapper>

@@ -1,9 +1,8 @@
 package com.example.scaffold.user
 
-import com.example.scaffold.TestcontainersConfiguration
+import com.example.scaffold.PostgresContainer
 import com.example.scaffold.platform.AppException
 import com.example.scaffold.platform.PasswordEncoderConfig
-import com.example.scaffold.platform.Role
 import com.example.scaffold.platform.Tx
 import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
@@ -16,12 +15,12 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 @MybatisTest
-@Import(UserService::class, Tx::class, PasswordEncoderConfig::class, TestcontainersConfiguration::class)
+@Import(UserService::class, Tx::class, PasswordEncoderConfig::class)
 class UserServiceTests(
 	@Autowired private val service: UserService,
 	@Autowired private val mapper: UserMapper,
 	@Autowired private val passwordEncoder: PasswordEncoder,
-) {
+) : PostgresContainer {
 
 	@Test
 	fun 注册时只保存密码哈希() {
@@ -33,10 +32,10 @@ class UserServiceTests(
 	}
 
 	@Test
-	fun 邮箱重复时抛出40901() {
-		service.create("alice", "alice@example.com", "password1")
+	fun 邮箱重复时抛出40901_不区分大小写() {
+		assertEquals("alice@example.com", service.create("alice", " Alice@Example.COM ", "password1").email)
 
-		val e = assertFailsWith<AppException> { service.create("alice2", "alice@example.com", "password1") }
+		val e = assertFailsWith<AppException> { service.create("alice2", "ALICE@example.com", "password1") }
 		assertEquals(40901, e.code)
 	}
 
@@ -71,18 +70,5 @@ class UserServiceTests(
 		assertEquals(40401, assertFailsWith<AppException> { service.get(999) }.code)
 		assertEquals(40401, assertFailsWith<AppException> { service.rename(999, "x") }.code)
 		assertEquals(40401, assertFailsWith<AppException> { service.delete(999) }.code)
-		assertEquals(40401, assertFailsWith<AppException> { service.grantRole(999, Role.ADMIN) }.code)
-		assertEquals(40401, assertFailsWith<AppException> { service.revokeRole(999, Role.ADMIN) }.code)
-	}
-
-	@Test
-	fun 授予和移除角色可以重复执行() {
-		val id = service.create("alice", "alice@example.com", "password1").id
-
-		repeat(2) { service.grantRole(id, Role.ADMIN) }
-		assertEquals(listOf(Role.ADMIN), mapper.findRoles(id))
-
-		repeat(2) { service.revokeRole(id, Role.ADMIN) }
-		assertEquals(emptyList(), mapper.findRoles(id))
 	}
 }

@@ -1,6 +1,6 @@
 package com.example.scaffold.platform
 
-import com.example.scaffold.TestcontainersConfiguration
+import com.example.scaffold.PostgresContainer
 import com.example.scaffold.get
 import com.example.scaffold.unauthorized
 import jakarta.servlet.FilterChain
@@ -24,8 +24,8 @@ import java.io.IOException
 /** 没经过 Controller 的错误（Filter 中抛出异常、调用 sendError）由 Tomcat 转发到 /error，MockMvc 不会转发，需要启动真实服务器验证。 */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureRestTestClient
-@Import(TestcontainersConfiguration::class, ErrorHandlerTests.FailingFilterConfig::class)
-class ErrorHandlerTests(@Autowired private val client: RestTestClient) {
+@Import(ErrorHandlerTests.FailingFilterConfig::class)
+class ErrorHandlerTests(@Autowired private val client: RestTestClient) : PostgresContainer {
 	@Test
 	fun Filter抛出业务异常按业务码返回() {
 		client.get("/fail/app", token = null)
@@ -56,6 +56,14 @@ class ErrorHandlerTests(@Autowired private val client: RestTestClient) {
 			.expectBody().json(unauthorized("/fail/send-error"), JsonCompareMode.STRICT)
 	}
 
+	@Test
+	fun Filter调用sendError500时只返回状态码() {
+		client.get("/fail/send-error-500", token = null)
+			.expectStatus().isEqualTo(500)
+			.expectHeader().contentType(MediaType.APPLICATION_PROBLEM_JSON)
+			.expectBody().json("""{"title":"Internal Server Error","status":500,"instance":"/fail/send-error-500"}""", JsonCompareMode.STRICT)
+	}
+
 	@TestConfiguration
 	class FailingFilterConfig {
 		// 排在 Spring Security 之前，否则请求先因未登录被拒绝
@@ -70,6 +78,7 @@ class ErrorHandlerTests(@Autowired private val client: RestTestClient) {
 						response.setHeader("WWW-Authenticate", "Bearer")
 						response.sendError(401)
 					}
+					"/fail/send-error-500" -> response.sendError(500)
 					else -> chain.doFilter(request, response)
 				}
 			}

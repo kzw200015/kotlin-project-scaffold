@@ -10,8 +10,8 @@ data class UserRecord(
 	val createdAt: OffsetDateTime,
 )
 
-/** 登录校验用的凭证，只在鉴权中使用，不要返回给客户端。[passwordHash] 为 null 表示未设置密码。 */
+/** 登录校验用的凭证，只在鉴权中使用，不要返回给客户端。 */
 data class UserCredential(
 	val id: Long,
-	val passwordHash: String?,
+	val passwordHash: String,
 )

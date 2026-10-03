@@ -27,14 +27,14 @@ export SPRING_DATASOURCE_PASSWORD=******
 export SPRING_DATA_REDIS_HOST=dev-redis              # Redis 默认 localhost:6379，另有 SPRING_DATA_REDIS_PORT / SPRING_DATA_REDIS_PASSWORD
 
 ./gradlew bootRun       # 启动时自动执行 Flyway 迁移
-./gradlew test          # 需要 Docker，Testcontainers 启动临时 PostgreSQL（AuthTests 另启动 Redis）
+./gradlew test          # 需要 Docker，所有测试共用一个 Testcontainers 临时 PostgreSQL（见 PostgresContainer，AuthTests 另启动 Redis）
 ./gradlew bootTestRun   # 需要 Docker，用 Testcontainers 临时 PostgreSQL 和 Redis 启动应用（无需准备环境）
 ./gradlew updateSchema  # 需要 Docker，迁移变更后更新 db/schema.sql
 ```
 
 ## 接口约定
 
-示例见 `user/UserController.kt`、`user/UserService.kt`，基础设施在 `platform/`。
+示例见 `user/UserController.kt`、`user/UserService.kt`。按领域分包：`user/` 为用户，`auth/` 为登录、会话、角色与授权规则（`auth` 依赖 `user`，`user` 不依赖 `auth`），跨领域基础设施在 `platform/`。
 
 **分层**：Controller（参数校验、组装响应）→ Service（业务逻辑、事务边界）→ Mapper（SQL）。Controller 不直接调用 Mapper。示例中直接返回记录类 `UserRecord`：记录类只放可以返回给客户端的列，敏感列（如密码哈希）用单独的类按需查询，见 `UserCredential`。
 
@@ -67,14 +67,14 @@ Tomcat 在解析阶段就拒绝的非法请求（如格式错误的请求行）�
 
 ## 鉴权约定
 
-登录接口校验邮箱密码后签发 token，之后的请求带上 `Authorization: Bearer <token>`，注销调用 `POST /api/v1/auth/logout`。登录见 `auth/AuthService.kt`，会话见 `auth/TokenService.kt`，授权规则和 401/403 处理见 `platform/SecurityConfig.kt`。
+登录接口校验邮箱密码后签发 token，之后的请求带上 `Authorization: Bearer <token>`，注销调用 `POST /api/v1/auth/logout`。登录见 `auth/AuthService.kt`，会话见 `auth/TokenService.kt`，授权规则和 401/403 处理见 `auth/SecurityConfig.kt`。
 
 **有状态 token**：token 是 32 字节随机数，本身不含任何信息；会话存在 Redis 中：`auth:token:{token 的 SHA-256}` → 用户 id，过期时间为 `app.auth.ttl`（默认 2 小时），到期由 Redis 自动删除。
 
-- **校验**：`TokenService` 实现了 Spring Security 的 `OpaqueTokenIntrospector`，在 `SecurityConfig` 中配置为 `opaqueToken` 的校验器。每个请求查 Redis 得到用户 id，再查库确认用户存在、加载角色，所以改角色、删除用户在下一个请求即生效。
+- **校验**：`TokenService` 实现了 Spring Security 的 `OpaqueTokenIntrospector`，在 `SecurityConfig` 中配置为 `opaqueToken` 的校验器。每个请求查 Redis 得到用户 id，再用一条查询确认用户存在并加载角色，所以改角色、删除用户在下一个请求即生效。
 - **注销**：删除 Redis 中的 key，token 立即失效。
 - **只存哈希**：Redis 中只存 token 的 SHA-256，Redis 数据泄露也拿不到可用的 token。
-- **代价**：每个请求一次 Redis 查询和两次数据库查询；Redis 不可用时所有需要登录的接口都返回 401，健康检查也会失败。
+- **代价**：每个请求一次 Redis 查询和一次数据库查询。Redis 或数据库不可用时，带 token 的请求返回 500：基础设施异常不是认证失败，Spring Security 不会把它转成 401，异常从 Filter 抛出，经 `/error` 写成 Problem Details；健康检查也会失败。
 
 ```bash
 curl -X POST localhost:8080/api/v1/users -H 'Content-Type: application/json' \
@@ -88,7 +88,8 @@ curl localhost:8080/api/v1/users/me -H "Authorization: Bearer $TOKEN"
 - **当前用户**：Controller 参数写 `authentication: Authentication`，用 `authentication.userId` 取用户 id，需要用户信息时再查库，见 `UserController.me`。`authentication.name` 即用户 id；需要 token 原文时（如注销）用 `authentication.tokenValue`。
 - **401**：未带 token、token 过期或无效时返回 401，响应体为 Problem Details（没有 `code`），带 `WWW-Authenticate: Bearer ...` 头。Spring Security 在 Filter 中拒绝请求，响应体由入口点调用 `sendError` 转发到 `/error` 写出，所以 ERROR 分派必须放行（按分派类型而不是路径放行，直接请求 `/error` 仍要求登录）。登录失败是业务错误，返回 `40101`，不区分邮箱不存在和密码错误。
 - **密码**：`PasswordEncoder` 默认 BCrypt，哈希带算法前缀（`{bcrypt}...`）存入 `users.password_hash`，记录类 `UserRecord` 不含该字段。BCrypt 最多处理 72 字节，注册时按字节校验长度（中文一个字 3 字节）。
-- **角色**：角色存在 `user_roles` 表（一个用户可有多个，目前只有 `ADMIN`；普通用户不存行，登录即可访问 `authenticated` 的接口），对应枚举 `platform/Role.kt`。每个请求由 `TokenService` 从数据库加载，转成 `ROLE_ADMIN` 等权限（Redis 中只存用户 id），授予或移除后立即生效。第一个管理员需要直接在数据库中授予：`INSERT INTO user_roles (user_id, role) VALUES (1, 'ADMIN');`，之后可由管理员调用 `PUT / DELETE /api/v1/users/{id}/roles/{role}` 授予或移除。
+- **邮箱**：注册和登录时先用 `normalizeEmail()` 去掉首尾空白并转小写，唯一约束与登录都不区分大小写。
+- **角色**：角色存在 `user_roles` 表（一个用户可有多个，目前只有 `ADMIN`；普通用户不存行，登录即可访问 `authenticated` 的接口），对应枚举 `auth/Role.kt`。每个请求由 `TokenService` 从数据库加载，转成 `ROLE_ADMIN` 等权限（Redis 中只存用户 id），授予或移除后立即生效。第一个管理员需要直接在数据库中授予：`INSERT INTO user_roles (user_id, role) VALUES (1, 'ADMIN');`，之后可由管理员调用 `PUT / DELETE /api/v1/users/{id}/roles/{role}` 授予或移除（`auth/RoleController.kt`）。
 - **权限规则**：按 URL 能确定的写在 `SecurityConfig` 的 `authorizeHttpRequests` 中，如删除用户、管理角色需要 `hasRole("ADMIN")`；依赖方法参数的写在 Controller 方法上，用 `@PreAuthorize`，如改名只能改自己（`hasRole('ADMIN') or #id.toString() == authentication.name`，`authentication.name` 为用户 id）。
 - **403**：已登录但没有权限时返回 403，响应体为 Problem Details（没有 `code`），带 `WWW-Authenticate: Bearer error="insufficient_scope", ...` 头。URL 级规则的拒绝由 `ExceptionTranslationFilter` 交给 `accessDeniedHandler`；`@PreAuthorize` 的拒绝在 Controller 中抛出，`ErrorHandler` 把它原样重新抛出，同样交给 `ExceptionTranslationFilter`，两者响应一致。
 

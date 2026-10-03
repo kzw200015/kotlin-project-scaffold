@@ -1,4 +1,4 @@
-package com.example.scaffold.platform
+package com.example.scaffold.auth
 
 import jakarta.servlet.DispatcherType
 import org.springframework.context.annotation.Bean
@@ -8,10 +8,6 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.invoke
 import org.springframework.security.config.http.SessionCreationPolicy
-import org.springframework.security.core.Authentication
-import org.springframework.security.crypto.factory.PasswordEncoderFactories
-import org.springframework.security.crypto.password.PasswordEncoder
-import org.springframework.security.oauth2.server.resource.authentication.AbstractOAuth2TokenAuthenticationToken
 import org.springframework.security.oauth2.server.resource.introspection.OpaqueTokenIntrospector
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint
 import org.springframework.security.oauth2.server.resource.web.access.BearerTokenAccessDeniedHandler
@@ -21,7 +17,7 @@ import org.springframework.security.web.access.AccessDeniedHandler
 import org.springframework.security.web.util.matcher.DispatcherTypeRequestMatcher
 
 /**
- * 鉴权：请求头 `Authorization: Bearer <token>`，token 由登录接口签发，会话存在 Redis 中（见 `auth/TokenService.kt`）。
+ * 鉴权：请求头 `Authorization: Bearer <token>`，token 由登录接口签发，会话存在 Redis 中（见 [TokenService]）。
  *
  * 除下面列出的公开接口外，其余接口都要求登录；按角色限制的接口也在下面列出，依赖方法参数的规则写在方法上（`@PreAuthorize`）。
  */
@@ -77,19 +73,3 @@ class SecurityConfig {
 		return http.build()
 	}
 }
-
-/** 单独放一个配置类，方便 `@MybatisTest` 等切片测试只导入它。 */
-@Configuration
-class PasswordEncoderConfig {
-	/** 默认 BCrypt。哈希带算法前缀（如 `{bcrypt}$2a$10$...`），以后换算法时旧哈希仍能校验。 */
-	@Bean
-	fun passwordEncoder(): PasswordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder()
-}
-
-/** 当前登录用户的 id（`name` 即用户 id，见 TokenService.introspect）。Controller 参数写 `authentication: Authentication` 即可取得。 */
-val Authentication.userId: Long
-	get() = name.toLong()
-
-/** 当前请求携带的 token 原文。 */
-val Authentication.tokenValue: String
-	get() = (this as AbstractOAuth2TokenAuthenticationToken<*>).token.tokenValue
