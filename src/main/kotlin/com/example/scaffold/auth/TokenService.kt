@@ -49,8 +49,8 @@ class TokenService(
 		val userId = redis.opsForValue().get(tokenKey(token))?.toLong()
 		if (userId == null || users.findById(userId) == null) throw BadOpaqueTokenException("invalid or expired token")
 		val authorities = users.findRoles(userId).map { SimpleGrantedAuthority("ROLE_${it.name}") }
-		// 第一个参数为 name，即 authentication.name；attributes 不能为空
-		return DefaultOAuth2AuthenticatedPrincipal(userId.toString(), mapOf(OAuth2TokenIntrospectionClaimNames.SUB to userId), authorities)
+		// sub 即 authentication.name
+		return DefaultOAuth2AuthenticatedPrincipal(mapOf(OAuth2TokenIntrospectionClaimNames.SUB to userId.toString()), authorities)
 	}
 }
 

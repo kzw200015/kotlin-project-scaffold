@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Bean
 import org.testcontainers.containers.GenericContainer
 import org.testcontainers.utility.DockerImageName
 
-/** 只有 opaque 方式的测试需要 Redis，单独导入，其他测试不启动这个容器。 */
+/** 只有走完整鉴权流程（经过 TokenService）的测试需要 Redis，单独导入，其他测试不启动这个容器。 */
 @TestConfiguration
 class RedisTestcontainersConfiguration {
 

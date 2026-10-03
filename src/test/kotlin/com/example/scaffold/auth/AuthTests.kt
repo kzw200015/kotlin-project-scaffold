@@ -2,7 +2,11 @@ package com.example.scaffold.auth
 
 import com.example.scaffold.RedisTestcontainersConfiguration
 import com.example.scaffold.TestcontainersConfiguration
+import com.example.scaffold.delete
+import com.example.scaffold.forbidden
+import com.example.scaffold.get
 import com.example.scaffold.platform.Role
+import com.example.scaffold.unauthorized
 import com.example.scaffold.user.UserMapper
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -14,9 +18,7 @@ import org.springframework.http.MediaType
 import org.springframework.test.context.jdbc.Sql
 import org.springframework.test.json.JsonCompareMode
 import org.springframework.test.web.servlet.client.RestTestClient
-import java.time.Duration
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -31,6 +33,7 @@ class AuthTests(
 	@Autowired private val client: RestTestClient,
 	@Autowired private val users: UserMapper,
 	@Autowired private val redis: StringRedisTemplate,
+	@Autowired private val props: AuthProperties,
 ) {
 	@Test
 	fun 注册登录后可以访问需要登录的接口() {
@@ -67,17 +70,12 @@ class AuthTests(
 	}
 
 	@Test
-	fun 过期或不存在的token返回401() {
-		val id = client.register("alice@example.com")
-		redis.opsForValue().set(tokenKey("expired-token"), id.toString(), Duration.ofMillis(1))
-		Thread.sleep(10)
-
-		for (token in listOf("expired-token", "unknown-token")) {
-			client.get("/api/v1/users/me", token)
-				.expectStatus().isUnauthorized()
-				.expectHeader().valueMatches("WWW-Authenticate", ".*invalid_token.*")
-				.expectBody().json(unauthorized("/api/v1/users/me"), JsonCompareMode.STRICT)
-		}
+	fun 无效token返回401() {
+		// 过期由 Redis 删除 key 实现，与不存在的 token 走同一分支；有效期是否设置见 Redis中只存token的哈希并按有效期自动过期
+		client.get("/api/v1/users/me", "unknown-token")
+			.expectStatus().isUnauthorized()
+			.expectHeader().valueMatches("WWW-Authenticate", ".*invalid_token.*")
+			.expectBody().json(unauthorized("/api/v1/users/me"), JsonCompareMode.STRICT)
 	}
 
 	@Test
@@ -117,10 +115,9 @@ class AuthTests(
 		val id = client.register("alice@example.com")
 		val token = client.token("alice@example.com")
 
-		assertNull(redis.opsForValue().get("auth:token:$token"))
+		assertTrue(redis.keys("*").none { token in it })
 		assertEquals(id.toString(), redis.opsForValue().get(tokenKey(token)))
-		// app.auth.ttl 默认 2 小时
-		assertTrue(redis.getExpire(tokenKey(token)) in 1..Duration.ofHours(2).seconds)
+		assertTrue(redis.getExpire(tokenKey(token)) in 1..props.ttl.seconds)
 	}
 
 	@Test

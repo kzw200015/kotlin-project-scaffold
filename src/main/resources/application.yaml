@@ -18,11 +18,6 @@ spring:
       repositories:
         enabled: false
 
-app:
-  auth:
-    # token 有效期，即 Redis 中会话的过期时间
-    ttl: 2h
-
 mybatis:
   mapper-locations: classpath:mapper/**/*.xml
   configuration:

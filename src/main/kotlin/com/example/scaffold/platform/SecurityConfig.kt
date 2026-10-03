@@ -1,5 +1,6 @@
 package com.example.scaffold.platform
 
+import jakarta.servlet.DispatcherType
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
@@ -17,6 +18,7 @@ import org.springframework.security.oauth2.server.resource.web.access.BearerToke
 import org.springframework.security.web.AuthenticationEntryPoint
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.access.AccessDeniedHandler
+import org.springframework.security.web.util.matcher.DispatcherTypeRequestMatcher
 
 /**
  * 鉴权：请求头 `Authorization: Bearer <token>`，token 由登录接口签发，会话存在 Redis 中（见 `auth/TokenService.kt`）。
@@ -47,8 +49,9 @@ class SecurityConfig {
 				authorize(HttpMethod.POST, "/api/v1/auth/login", permitAll)
 				authorize(HttpMethod.POST, "/api/v1/users", permitAll)
 				authorize("/actuator/health/**", permitAll)
-				// sendError 和 Filter 异常会转发到 /error，必须放行，否则响应体为空
-				authorize("/error", permitAll)
+				// sendError 和 Filter 异常会以 ERROR 分派转发到 /error，必须放行，否则响应体为空。
+				// 按分派类型而不是路径放行：直接请求 /error 仍要求登录，错误路径改了也不用同步
+				authorize(DispatcherTypeRequestMatcher(DispatcherType.ERROR), permitAll)
 				authorize(HttpMethod.DELETE, "/api/v1/users/*", hasRole(Role.ADMIN.name))
 				authorize("/api/v1/users/*/roles/**", hasRole(Role.ADMIN.name))
 				authorize(anyRequest, authenticated)

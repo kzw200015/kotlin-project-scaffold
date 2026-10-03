@@ -1,6 +1,8 @@
 package com.example.scaffold.platform
 
 import com.example.scaffold.TestcontainersConfiguration
+import com.example.scaffold.get
+import com.example.scaffold.unauthorized
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -26,7 +28,7 @@ import java.io.IOException
 class ErrorHandlerTests(@Autowired private val client: RestTestClient) {
 	@Test
 	fun Filter抛出业务异常按业务码返回() {
-		get("/fail/app")
+		client.get("/fail/app", token = null)
 			.expectStatus().isUnauthorized()
 			.expectHeader().contentType(MediaType.APPLICATION_PROBLEM_JSON)
 			// instance 为原始请求路径，而不是转发后的 /error
@@ -40,7 +42,7 @@ class ErrorHandlerTests(@Autowired private val client: RestTestClient) {
 	fun Filter抛出未预期异常返回500且不泄露细节() {
 		// checked 异常会被 Tomcat 包在 ServletException 中
 		for (path in listOf("/fail/unexpected", "/fail/checked")) {
-			get(path)
+			client.get(path, token = null)
 				.expectStatus().isEqualTo(500)
 				.expectBody().json("""{"title":"Internal Server Error","status":500,"instance":"$path"}""", JsonCompareMode.STRICT)
 		}
@@ -48,13 +50,11 @@ class ErrorHandlerTests(@Autowired private val client: RestTestClient) {
 
 	@Test
 	fun Filter调用sendError时保留状态码和响应头() {
-		get("/fail/send-error")
+		client.get("/fail/send-error", token = null)
 			.expectStatus().isUnauthorized()
 			.expectHeader().valueEquals("WWW-Authenticate", "Bearer")
-			.expectBody().json("""{"title":"Unauthorized","status":401,"instance":"/fail/send-error"}""", JsonCompareMode.STRICT)
+			.expectBody().json(unauthorized("/fail/send-error"), JsonCompareMode.STRICT)
 	}
-
-	private fun get(path: String) = client.get().uri(path).exchange()
 
 	@TestConfiguration
 	class FailingFilterConfig {

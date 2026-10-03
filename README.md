@@ -36,7 +36,7 @@ export SPRING_DATA_REDIS_HOST=dev-redis              # Redis 默认 localhost:63
 
 示例见 `user/UserController.kt`、`user/UserService.kt`，基础设施在 `platform/`。
 
-**分层**：Controller（参数校验、组装响应）→ Service（业务逻辑、事务边界）→ Mapper（SQL）。Controller 不直接调用 Mapper。示例中直接返回记录类 `UserRecord`；表中有敏感字段（如密码哈希）时，需要单独定义响应类，避免字段随表结构泄露到接口。
+**分层**：Controller（参数校验、组装响应）→ Service（业务逻辑、事务边界）→ Mapper（SQL）。Controller 不直接调用 Mapper。示例中直接返回记录类 `UserRecord`：记录类只放可以返回给客户端的列，敏感列（如密码哈希）用单独的类按需查询，见 `UserCredential`。
 
 **响应格式**：成功时直接返回资源，不额外包装，用 HTTP 状态码表达结果；错误统一为 [Problem Details](https://www.rfc-editor.org/rfc/rfc9457)（`application/problem+json`）。
 
@@ -84,9 +84,9 @@ curl -X POST localhost:8080/api/v1/auth/login -H 'Content-Type: application/json
 curl localhost:8080/api/v1/users/me -H "Authorization: Bearer $TOKEN"
 ```
 
-- **公开接口**：注册（`POST /api/v1/users`）、登录、`/actuator/health/**`、`/error`，在 `SecurityConfig` 中逐个列出；其余接口都要求登录。新增公开接口时加到这里。
+- **公开接口**：注册（`POST /api/v1/users`）、登录、`/actuator/health/**`，在 `SecurityConfig` 中逐个列出；其余接口都要求登录。新增公开接口时加到这里。另外放行了错误转发（ERROR 分派），见下一条。
 - **当前用户**：Controller 参数写 `authentication: Authentication`，用 `authentication.userId` 取用户 id，需要用户信息时再查库，见 `UserController.me`。`authentication.name` 即用户 id；需要 token 原文时（如注销）用 `authentication.tokenValue`。
-- **401**：未带 token、token 过期或无效时返回 401，响应体为 Problem Details（没有 `code`），带 `WWW-Authenticate: Bearer ...` 头。Spring Security 在 Filter 中拒绝请求，响应体由入口点调用 `sendError` 转发到 `/error` 写出，所以 `/error` 必须公开。登录失败是业务错误，返回 `40101`，不区分邮箱不存在和密码错误。
+- **401**：未带 token、token 过期或无效时返回 401，响应体为 Problem Details（没有 `code`），带 `WWW-Authenticate: Bearer ...` 头。Spring Security 在 Filter 中拒绝请求，响应体由入口点调用 `sendError` 转发到 `/error` 写出，所以 ERROR 分派必须放行（按分派类型而不是路径放行，直接请求 `/error` 仍要求登录）。登录失败是业务错误，返回 `40101`，不区分邮箱不存在和密码错误。
 - **密码**：`PasswordEncoder` 默认 BCrypt，哈希带算法前缀（`{bcrypt}...`）存入 `users.password_hash`，记录类 `UserRecord` 不含该字段。BCrypt 最多处理 72 字节，注册时按字节校验长度（中文一个字 3 字节）。
 - **角色**：角色存在 `user_roles` 表（一个用户可有多个，目前只有 `ADMIN`；普通用户不存行，登录即可访问 `authenticated` 的接口），对应枚举 `platform/Role.kt`。每个请求由 `TokenService` 从数据库加载，转成 `ROLE_ADMIN` 等权限（Redis 中只存用户 id），授予或移除后立即生效。第一个管理员需要直接在数据库中授予：`INSERT INTO user_roles (user_id, role) VALUES (1, 'ADMIN');`，之后可由管理员调用 `PUT / DELETE /api/v1/users/{id}/roles/{role}` 授予或移除。
 - **权限规则**：按 URL 能确定的写在 `SecurityConfig` 的 `authorizeHttpRequests` 中，如删除用户、管理角色需要 `hasRole("ADMIN")`；依赖方法参数的写在 Controller 方法上，用 `@PreAuthorize`，如改名只能改自己（`hasRole('ADMIN') or #id.toString() == authentication.name`，`authentication.name` 为用户 id）。

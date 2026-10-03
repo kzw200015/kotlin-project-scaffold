@@ -44,18 +44,18 @@ class UserService(private val tx: Tx, private val mapper: UserMapper, private va
 		if (mapper.deleteById(id) == 0) UserErrors.notFound(id)
 	}
 
-	/** 授予角色，已有时不变。用户重新登录后生效：角色写在 token 里，旧 token 到期前仍是原来的角色。 */
+	/** 授予角色，已有时不变。下一个请求即生效：角色在每个请求时从数据库加载（见 TokenService）。 */
 	fun grantRole(id: Long, role: Role) {
 		tx.write {
-			mapper.findById(id) ?: UserErrors.notFound(id)
+			get(id)
 			mapper.addRole(id, role)
 		}
 	}
 
-	/** 移除角色，没有该角色时不变。与 [grantRole] 一样，用户重新登录后生效。 */
+	/** 移除角色，没有该角色时不变。与 [grantRole] 一样立即生效。 */
 	fun revokeRole(id: Long, role: Role) {
 		tx.write {
-			mapper.findById(id) ?: UserErrors.notFound(id)
+			get(id)
 			mapper.removeRole(id, role)
 		}
 	}

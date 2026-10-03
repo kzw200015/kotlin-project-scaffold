@@ -53,10 +53,10 @@ kotlin {
 	}
 }
 
-tasks.withType<Test> {
+tasks.withType<Test>().configureEach {
 	useJUnitPlatform()
-	// 显式挂载 Mockito agent，避免 JDK 21+ 动态挂载告警（未来 JDK 将默认禁止）
-	jvmArgs("-javaagent:${mockitoAgent.asPath}")
+	// 显式挂载 Mockito agent，避免 JDK 21+ 动态挂载告警（未来 JDK 将默认禁止）；执行时才解析依赖，不拖慢 bootRun 等命令的配置阶段
+	jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-javaagent:${mockitoAgent.asPath}") })
 }
 
 tasks.test {
