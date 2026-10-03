@@ -18,7 +18,7 @@ Spring Boot 4.1 + Kotlin 2.3 + MyBatis + PostgreSQL。完整约定见 README.md�
 - **并发**：Controller / Service 写普通函数（跑在虚拟线程上），不写 `suspend` Controller；需要并发时写 `runBlocking { async(Dispatchers.Virtual) { } }`，不要把调度器传给 `runBlocking`。
 - **分包**：按领域分包（如 `user/`；登录、会话、角色和授权规则在 `auth/`），跨领域基础设施放 `platform/`。Service 可以直接用其他领域的 Mapper（如 `auth` 用 `UserMapper` 查凭证），包之间不要循环依赖：`auth` 依赖 `user`，`user` 不依赖 `auth`。
 - **测试**：需要数据库的测试类实现 `PostgresContainer` 接口，所有测试共用一个 PostgreSQL 容器（不要改回 `@Bean` 声明：任一上下文关闭都会停掉它）；Mapper / Service 用 `@MybatisTest` 跑真实 SQL（Service 再导入 `XxxService::class` 及其依赖的 bean，如 `Tx::class`、用到密码时的 `PasswordEncoderConfig::class`）；Controller 用 `@WebMvcTest` + `@Import(SecurityConfig::class)` + `@MockitoBean` mock Service 和 `OpaqueTokenIntrospector`，需要登录的请求加 `with(opaqueToken())`（它不经过 TokenService，需要角色时用 `.authorities(SimpleGrantedAuthority("ROLE_ADMIN"))` 直接给出；常用的 `asUser(id)` / `asAdmin()` 见 `MockMvcSupport.kt`），验证响应格式与错误码；经过 `/error` 的响应体（Filter 异常、401、403）用 `RANDOM_PORT` + `@AutoConfigureRestTestClient` 启动真实服务器、注入 `RestTestClient` 验证，见 `auth/AuthTests.kt`（需要 Redis 的测试再实现 `RedisContainer`）；mock 用 mockito-kotlin。
-- **命名**：业务代码（含类名）用英文 camelCase；测试方法名用中文描述被测场景，不用反引号句子，也不加 `@DisplayName`（如 `fun 只读事务拒绝写操作()`）。方法名中不能有空格和中文标点，需要分隔时用下划线。
+- **命名**：业务代码和测试（含类名、方法名）都用英文 camelCase，不用反引号句子；测试方法加 `@DisplayName` 用中文描述被测场景（如 `@DisplayName("只读事务拒绝写操作") fun readOnlyRejectsWrites()`）。
 
 ## 常用命令
 

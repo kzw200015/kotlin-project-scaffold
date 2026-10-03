@@ -1,6 +1,7 @@
 package com.example.scaffold.user
 
 import com.example.scaffold.PostgresContainer
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
 import org.springframework.beans.factory.annotation.Autowired
@@ -11,7 +12,8 @@ import kotlin.test.assertNull
 class UserMapperTests(@Autowired private val mapper: UserMapper) : PostgresContainer {
 
 	@Test
-	fun 插入后返回数据库生成的新行() {
+	@DisplayName("插入后返回数据库生成的新行")
+	fun insertReturnsGeneratedRow() {
 		val row = mapper.insert("alice", "alice@example.com", "hash")
 
 		assertEquals("alice", row.name)
@@ -20,7 +22,8 @@ class UserMapperTests(@Autowired private val mapper: UserMapper) : PostgresConta
 	}
 
 	@Test
-	fun 按邮箱查询登录凭证() {
+	@DisplayName("按邮箱查询登录凭证")
+	fun findCredentialByEmail() {
 		val id = mapper.insert("alice", "alice@example.com", "{bcrypt}xxx").id
 
 		assertEquals(UserCredential(id, "{bcrypt}xxx"), mapper.findCredentialByEmail("alice@example.com"))
@@ -28,7 +31,8 @@ class UserMapperTests(@Autowired private val mapper: UserMapper) : PostgresConta
 	}
 
 	@Test
-	fun 搜索按关键字过滤并分页() {
+	@DisplayName("搜索按关键字过滤并分页")
+	fun searchFiltersByKeywordAndPaginates() {
 		listOf("bob", "carol", "dave").forEach { mapper.insert(it, "$it@example.com", "hash") }
 
 		assertEquals(listOf("bob", "carol"), mapper.search(keyword = null, limit = 2, offset = 0).map { it.name })
@@ -39,7 +43,8 @@ class UserMapperTests(@Autowired private val mapper: UserMapper) : PostgresConta
 	}
 
 	@Test
-	fun 按id更新和删除() {
+	@DisplayName("按 id 更新和删除")
+	fun updateAndDeleteById() {
 		val id = mapper.insert("bob", "bob@example.com", "hash").id
 
 		assertEquals(1, mapper.updateName(id, "robert"))

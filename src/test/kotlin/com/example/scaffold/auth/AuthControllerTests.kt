@@ -1,5 +1,6 @@
 package com.example.scaffold.auth
 
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.verifyNoInteractions
 import org.springframework.beans.factory.annotation.Autowired
@@ -23,7 +24,8 @@ class AuthControllerTests(@Autowired private val mvc: MockMvc) {
 	private lateinit var tokenIntrospector: OpaqueTokenIntrospector
 
 	@Test
-	fun 登录时邮箱或密码为空返回400() {
+	@DisplayName("登录时邮箱或密码为空返回 400")
+	fun blankEmailOrPasswordReturns400() {
 		for (body in listOf("""{"email": "", "password": "password1"}""", """{"email": "alice@example.com", "password": " "}""")) {
 			mvc.post("/api/v1/auth/login") {
 				contentType = MediaType.APPLICATION_JSON

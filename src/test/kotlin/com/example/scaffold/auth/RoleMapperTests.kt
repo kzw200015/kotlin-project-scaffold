@@ -2,6 +2,7 @@ package com.example.scaffold.auth
 
 import com.example.scaffold.PostgresContainer
 import com.example.scaffold.user.UserMapper
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
 import org.springframework.beans.factory.annotation.Autowired
@@ -14,7 +15,8 @@ class RoleMapperTests(
 ) : PostgresContainer {
 
 	@Test
-	fun 按用户查询角色时区分用户不存在和没有角色() {
+	@DisplayName("按用户查询角色时区分用户不存在和没有角色")
+	fun findByUserIdDistinguishesMissingUserFromNoRoles() {
 		val id = users.insert("alice", "alice@example.com", "hash").id
 
 		assertEquals(emptyList(), mapper.findByUserId(999))
@@ -25,7 +27,8 @@ class RoleMapperTests(
 	}
 
 	@Test
-	fun 授予和移除角色() {
+	@DisplayName("授予和移除角色")
+	fun addAndRemoveRole() {
 		val id = users.insert("alice", "alice@example.com", "hash").id
 
 		assertEquals(1, mapper.add(id, Role.ADMIN))
@@ -37,7 +40,8 @@ class RoleMapperTests(
 	}
 
 	@Test
-	fun 每个角色都能写入数据库() {
+	@DisplayName("每个角色都能写入数据库")
+	fun everyRoleCanBeStored() {
 		// Role 枚举与 user_roles.role 的 CHECK 约束不一致时这里会失败
 		val id = users.insert("alice", "alice@example.com", "hash").id
 
@@ -47,7 +51,8 @@ class RoleMapperTests(
 	}
 
 	@Test
-	fun 删除用户时一并删除角色() {
+	@DisplayName("删除用户时一并删除角色")
+	fun deletingUserDeletesRoles() {
 		val id = users.insert("alice", "alice@example.com", "hash").id
 		mapper.add(id, Role.ADMIN)
 

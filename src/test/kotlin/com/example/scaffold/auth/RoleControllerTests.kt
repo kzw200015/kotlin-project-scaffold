@@ -2,6 +2,7 @@ package com.example.scaffold.auth
 
 import com.example.scaffold.asAdmin
 import com.example.scaffold.asUser
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.verifyNoInteractions
@@ -26,7 +27,8 @@ class RoleControllerTests(@Autowired private val mvc: MockMvc) {
 	private lateinit var tokenIntrospector: OpaqueTokenIntrospector
 
 	@Test
-	fun 管理员授予和移除角色() {
+	@DisplayName("管理员授予和移除角色")
+	fun adminGrantsAndRevokesRoles() {
 		mvc.put("/api/v1/users/2/roles/ADMIN") { with(asAdmin()) }.andExpect { status { isNoContent() } }
 		mvc.delete("/api/v1/users/2/roles/ADMIN") { with(asAdmin()) }.andExpect { status { isNoContent() } }
 		// 不存在的角色名
@@ -37,7 +39,8 @@ class RoleControllerTests(@Autowired private val mvc: MockMvc) {
 	}
 
 	@Test
-	fun 普通用户不能管理角色() {
+	@DisplayName("普通用户不能管理角色")
+	fun regularUserCannotManageRoles() {
 		mvc.put("/api/v1/users/2/roles/ADMIN") { with(asUser(1)) }.andExpect { status { isForbidden() } }
 		mvc.delete("/api/v1/users/2/roles/ADMIN") { with(asUser(1)) }.andExpect { status { isForbidden() } }
 

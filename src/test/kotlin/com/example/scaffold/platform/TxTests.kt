@@ -2,6 +2,7 @@ package com.example.scaffold.platform
 
 import com.example.scaffold.PostgresContainer
 import com.example.scaffold.user.UserMapper
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
 import org.springframework.beans.factory.annotation.Autowired
@@ -24,7 +25,8 @@ class TxTests(
 ) : PostgresContainer {
 
 	@Test
-	fun 写事务提交并返回代码块结果() {
+	@DisplayName("写事务提交并返回代码块结果")
+	fun writeCommitsAndReturnsBlockResult() {
 		val inserted = tx.write { mapper.insert("alice", "alice@example.com", "hash") }
 
 		assertEquals(inserted, mapper.findById(inserted.id))
@@ -32,7 +34,8 @@ class TxTests(
 	}
 
 	@Test
-	fun 抛出异常时回滚并原样抛出() {
+	@DisplayName("抛出异常时回滚并原样抛出")
+	fun exceptionRollsBackAndIsRethrown() {
 		assertFailsWith<IllegalStateException> {
 			tx.write {
 				mapper.insert("alice", "alice@example.com", "hash")
@@ -50,7 +53,8 @@ class TxTests(
 	}
 
 	@Test
-	fun 调用setRollbackOnly时不抛异常也回滚() {
+	@DisplayName("调用 setRollbackOnly 时不抛异常也回滚")
+	fun setRollbackOnlyRollsBackWithoutException() {
 		tx.write { status ->
 			mapper.insert("alice", "alice@example.com", "hash")
 			status.setRollbackOnly()
@@ -60,7 +64,8 @@ class TxTests(
 	}
 
 	@Test
-	fun 只读事务拒绝写操作() {
+	@DisplayName("只读事务拒绝写操作")
+	fun readOnlyRejectsWrites() {
 		assertFailsWith<DataAccessException> {
 			tx.read { mapper.insert("alice", "alice@example.com", "hash") }
 		}

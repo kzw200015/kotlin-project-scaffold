@@ -6,6 +6,7 @@ import com.example.scaffold.unauthorized
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient
@@ -27,7 +28,8 @@ import java.io.IOException
 @Import(ErrorHandlerTests.FailingFilterConfig::class)
 class ErrorHandlerTests(@Autowired private val client: RestTestClient) : PostgresContainer {
 	@Test
-	fun Filter抛出业务异常按业务码返回() {
+	@DisplayName("Filter 抛出业务异常按业务码返回")
+	fun filterAppExceptionReturnsItsCode() {
 		client.get("/fail/app", token = null)
 			.expectStatus().isUnauthorized()
 			.expectHeader().contentType(MediaType.APPLICATION_PROBLEM_JSON)
@@ -39,7 +41,8 @@ class ErrorHandlerTests(@Autowired private val client: RestTestClient) : Postgre
 	}
 
 	@Test
-	fun Filter抛出未预期异常返回500且不泄露细节() {
+	@DisplayName("Filter 抛出未预期异常返回 500 且不泄露细节")
+	fun filterUnexpectedExceptionReturns500WithoutDetails() {
 		// checked 异常会被 Tomcat 包在 ServletException 中
 		for (path in listOf("/fail/unexpected", "/fail/checked")) {
 			client.get(path, token = null)
@@ -49,7 +52,8 @@ class ErrorHandlerTests(@Autowired private val client: RestTestClient) : Postgre
 	}
 
 	@Test
-	fun Filter调用sendError时保留状态码和响应头() {
+	@DisplayName("Filter 调用 sendError 时保留状态码和响应头")
+	fun filterSendErrorKeepsStatusAndHeaders() {
 		client.get("/fail/send-error", token = null)
 			.expectStatus().isUnauthorized()
 			.expectHeader().valueEquals("WWW-Authenticate", "Bearer")
@@ -57,7 +61,8 @@ class ErrorHandlerTests(@Autowired private val client: RestTestClient) : Postgre
 	}
 
 	@Test
-	fun Filter调用sendError500时只返回状态码() {
+	@DisplayName("Filter 调用 sendError(500) 时只返回状态码")
+	fun filterSendError500ReturnsStatusOnly() {
 		client.get("/fail/send-error-500", token = null)
 			.expectStatus().isEqualTo(500)
 			.expectHeader().contentType(MediaType.APPLICATION_PROBLEM_JSON)

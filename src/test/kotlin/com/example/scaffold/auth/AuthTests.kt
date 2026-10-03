@@ -8,6 +8,7 @@ import com.example.scaffold.get
 import com.example.scaffold.unauthorized
 import com.example.scaffold.user.UserMapper
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient
@@ -43,7 +44,8 @@ class AuthTests(
 	}
 
 	@Test
-	fun 注册登录后可以访问需要登录的接口() {
+	@DisplayName("注册登录后可以访问需要登录的接口")
+	fun registeredUserCanAccessProtectedEndpoint() {
 		client.register("alice@example.com")
 
 		client.get("/api/v1/users/me", client.token("alice@example.com"))
@@ -52,14 +54,16 @@ class AuthTests(
 	}
 
 	@Test
-	fun 登录时邮箱不区分大小写() {
+	@DisplayName("登录时邮箱不区分大小写")
+	fun loginEmailIsCaseInsensitive() {
 		client.register("alice@example.com")
 
 		client.login(" Alice@Example.COM ", PASSWORD).expectStatus().isOk()
 	}
 
 	@Test
-	fun 密码错误和邮箱未注册都返回40101() {
+	@DisplayName("密码错误和邮箱未注册都返回 40101")
+	fun wrongPasswordAndUnknownEmailBothReturn40101() {
 		client.register("alice@example.com")
 
 		// 超过 BCrypt 72 字节上限的密码同样按密码错误处理
@@ -75,7 +79,8 @@ class AuthTests(
 	}
 
 	@Test
-	fun 未携带token返回401统一格式() {
+	@DisplayName("未携带 token 返回 401 统一格式")
+	fun missingTokenReturns401ProblemDetail() {
 		client.get("/api/v1/users/1", token = null)
 			.expectStatus().isUnauthorized()
 			.expectHeader().valueMatches("WWW-Authenticate", "Bearer.*")
@@ -84,8 +89,9 @@ class AuthTests(
 	}
 
 	@Test
-	fun 无效token返回401() {
-		// 过期由 Redis 删除 key 实现，与不存在的 token 走同一分支；有效期是否设置见 Redis中只存token的哈希并按有效期自动过期
+	@DisplayName("无效 token 返回 401")
+	fun invalidTokenReturns401() {
+		// 过期由 Redis 删除 key 实现，与不存在的 token 走同一分支；有效期是否设置见 redisStoresTokenHashWithTtl
 		client.get("/api/v1/users/me", "unknown-token")
 			.expectStatus().isUnauthorized()
 			.expectHeader().valueMatches("WWW-Authenticate", ".*invalid_token.*")
@@ -93,7 +99,8 @@ class AuthTests(
 	}
 
 	@Test
-	fun 普通用户删除用户返回403_授予管理员后同一个token立即生效() {
+	@DisplayName("普通用户删除用户返回 403，授予管理员后同一个 token 立即生效")
+	fun grantingAdminTakesEffectOnExistingToken() {
 		val aliceId = client.register("alice@example.com")
 		val bobId = client.register("bob@example.com")
 		val token = client.token("alice@example.com")
@@ -110,7 +117,8 @@ class AuthTests(
 	}
 
 	@Test
-	fun 普通用户改别人的名字返回403() {
+	@DisplayName("普通用户改别人的名字返回 403")
+	fun renamingOtherUserReturns403() {
 		val aliceId = client.register("alice@example.com")
 		client.register("bob@example.com")
 
@@ -125,7 +133,8 @@ class AuthTests(
 	}
 
 	@Test
-	fun Redis中只存token的哈希并按有效期自动过期() {
+	@DisplayName("Redis 中只存 token 的哈希并按有效期自动过期")
+	fun redisStoresTokenHashWithTtl() {
 		val id = client.register("alice@example.com")
 		val issuedAfter = Instant.now()
 		val (token, expiresAt) = client.login("alice@example.com", PASSWORD)
@@ -139,7 +148,8 @@ class AuthTests(
 	}
 
 	@Test
-	fun 注销后token立即失效() {
+	@DisplayName("注销后 token 立即失效")
+	fun logoutRevokesTokenImmediately() {
 		client.register("alice@example.com")
 		val token = client.token("alice@example.com")
 
@@ -149,7 +159,8 @@ class AuthTests(
 	}
 
 	@Test
-	fun 用户删除后token失效() {
+	@DisplayName("用户删除后 token 失效")
+	fun deletingUserRevokesToken() {
 		val id = client.register("alice@example.com")
 		val token = client.token("alice@example.com")
 
@@ -159,7 +170,8 @@ class AuthTests(
 	}
 
 	@Test
-	fun 健康检查无需登录() {
+	@DisplayName("健康检查无需登录")
+	fun healthCheckIsPublic() {
 		// 200 表示数据库和 Redis 都可用，任一不可用时为 503
 		client.get("/actuator/health", token = null).expectStatus().isOk()
 	}

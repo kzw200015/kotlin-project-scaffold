@@ -4,6 +4,7 @@ import com.example.scaffold.asAdmin
 import com.example.scaffold.asUser
 import com.example.scaffold.auth.SecurityConfig
 import org.hamcrest.Matchers.containsString
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.verifyNoInteractions
@@ -39,7 +40,8 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	private val alice = UserRecord(1, "alice", "alice@example.com", OffsetDateTime.parse("2026-01-01T00:00:00Z"))
 
 	@Test
-	fun 创建成功返回201和新建的用户() {
+	@DisplayName("创建成功返回 201 和新建的用户")
+	fun createReturns201WithNewUser() {
 		whenever(service.create("alice", "alice@example.com", "password1")).thenReturn(alice)
 
 		// 注册无需登录
@@ -51,7 +53,8 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	}
 
 	@Test
-	fun 获取当前登录用户() {
+	@DisplayName("获取当前登录用户")
+	fun getCurrentUser() {
 		whenever(service.get(1)).thenReturn(alice)
 
 		mvc.get("/api/v1/users/me") { with(asUser(1)) }.andExpect {
@@ -61,7 +64,8 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	}
 
 	@Test
-	fun 删除成功返回204且没有响应体() {
+	@DisplayName("删除成功返回 204 且没有响应体")
+	fun deleteReturns204WithoutBody() {
 		mvc.delete("/api/v1/users/1") { with(asAdmin()) }.andExpect {
 			status { isNoContent() }
 			content { string("") }
@@ -71,14 +75,16 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	}
 
 	@Test
-	fun 普通用户不能删除用户() {
+	@DisplayName("普通用户不能删除用户")
+	fun regularUserCannotDeleteUsers() {
 		mvc.delete("/api/v1/users/2") { with(asUser(1)) }.andExpect { status { isForbidden() } }
 
 		verifyNoInteractions(service)
 	}
 
 	@Test
-	fun 只能改自己的名字_管理员可以改任何人() {
+	@DisplayName("只能改自己的名字，管理员可以改任何人")
+	fun renameOnlySelfUnlessAdmin() {
 		whenever(service.rename(1, "robert")).thenReturn(alice)
 
 		rename(1, asUser(2)).andExpect { status { isForbidden() } }
@@ -87,7 +93,8 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	}
 
 	@Test
-	fun 请求参数不合法返回400且没有业务码() {
+	@DisplayName("请求参数不合法返回 400 且没有业务码")
+	fun invalidRequestReturns400WithoutCode() {
 		val responses = listOf(
 			postUser("""{"name": "", "email": "not-an-email", "password": "password1"}"""),
 			// 缺少字段
@@ -108,7 +115,8 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	}
 
 	@Test
-	fun 业务异常按业务码返回() {
+	@DisplayName("业务异常按业务码返回")
+	fun appExceptionReturnsItsCode() {
 		whenever(service.get(9)).thenAnswer { UserErrors.notFound(9) }
 
 		mvc.get("/api/v1/users/9") { with(opaqueToken()) }.andExpect {
@@ -124,7 +132,8 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	}
 
 	@Test
-	fun 未预期异常返回500且不泄露细节() {
+	@DisplayName("未预期异常返回 500 且不泄露细节")
+	fun unexpectedExceptionReturns500WithoutDetails() {
 		whenever(service.get(1)).thenThrow(IllegalStateException("password=secret"))
 
 		mvc.get("/api/v1/users/1") { with(opaqueToken()) }.andExpect {
@@ -134,7 +143,8 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	}
 
 	@Test
-	fun 路径方法或ContentType不匹配时返回对应状态码() {
+	@DisplayName("路径、方法或 Content-Type 不匹配时返回对应状态码")
+	fun unmatchedPathMethodOrContentTypeReturnsCorrespondingStatus() {
 		mvc.get("/api/v1/nope") { with(opaqueToken()) }.andExpect {
 			status { isNotFound() }
 		}

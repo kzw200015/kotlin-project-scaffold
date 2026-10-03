@@ -1,5 +1,6 @@
 package com.example.scaffold
 
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
 import java.nio.file.Path
@@ -18,7 +19,8 @@ class SchemaSnapshotTests : PostgresContainer {
 	private val snapshot = Path.of("db/schema.sql")
 
 	@Test
-	fun 表结构快照与迁移结果一致() {
+	@DisplayName("表结构快照与迁移结果一致")
+	fun schemaSnapshotMatchesMigrations() {
 		val actual = dumpSchema()
 
 		if (System.getProperty("schema.update") == "true") {

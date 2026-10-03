@@ -4,6 +4,7 @@ import com.example.scaffold.PostgresContainer
 import com.example.scaffold.platform.AppException
 import com.example.scaffold.platform.PasswordEncoderConfig
 import com.example.scaffold.platform.Tx
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
 import org.springframework.beans.factory.annotation.Autowired
@@ -23,7 +24,8 @@ class UserServiceTests(
 ) : PostgresContainer {
 
 	@Test
-	fun 注册时只保存密码哈希() {
+	@DisplayName("注册时只保存密码哈希")
+	fun createStoresOnlyPasswordHash() {
 		service.create("alice", "alice@example.com", "password1")
 
 		val hash = mapper.findCredentialByEmail("alice@example.com")?.passwordHash
@@ -32,7 +34,8 @@ class UserServiceTests(
 	}
 
 	@Test
-	fun 邮箱重复时抛出40901_不区分大小写() {
+	@DisplayName("邮箱重复时抛出 40901，不区分大小写")
+	fun duplicateEmailThrows40901IgnoringCase() {
 		assertEquals("alice@example.com", service.create("alice", " Alice@Example.COM ", "password1").email)
 
 		val e = assertFailsWith<AppException> { service.create("alice2", "ALICE@example.com", "password1") }
@@ -40,7 +43,8 @@ class UserServiceTests(
 	}
 
 	@Test
-	fun 搜索返回当前页数据和总数() {
+	@DisplayName("搜索返回当前页数据和总数")
+	fun searchReturnsPageItemsAndTotal() {
 		listOf("bob", "carol", "dave").forEach { service.create(it, "$it@example.com", "password1") }
 
 		val page = service.search(keyword = null, page = 2, size = 2)
@@ -50,7 +54,8 @@ class UserServiceTests(
 	}
 
 	@Test
-	fun 搜索关键字中的通配符按字面匹配() {
+	@DisplayName("搜索关键字中的通配符按字面匹配")
+	fun searchMatchesWildcardsLiterally() {
 		service.create("bob", "bob@example.com", "password1")
 		service.create("a_b", "a_b@example.com", "password1")
 
@@ -59,14 +64,16 @@ class UserServiceTests(
 	}
 
 	@Test
-	fun 改名后返回最新数据() {
+	@DisplayName("改名后返回最新数据")
+	fun renameReturnsUpdatedUser() {
 		val id = service.create("bob", "bob@example.com", "password1").id
 
 		assertEquals("robert", service.rename(id, "robert").name)
 	}
 
 	@Test
-	fun 用户不存在时抛出40401() {
+	@DisplayName("用户不存在时抛出 40401")
+	fun missingUserThrows40401() {
 		assertEquals(40401, assertFailsWith<AppException> { service.get(999) }.code)
 		assertEquals(40401, assertFailsWith<AppException> { service.rename(999, "x") }.code)
 		assertEquals(40401, assertFailsWith<AppException> { service.delete(999) }.code)
