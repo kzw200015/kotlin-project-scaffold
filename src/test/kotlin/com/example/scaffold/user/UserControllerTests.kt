@@ -2,7 +2,6 @@ package com.example.scaffold.user
 
 import com.example.scaffold.platform.SecurityConfig
 import org.hamcrest.Matchers.containsString
-import org.hamcrest.Matchers.nullValue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
@@ -11,6 +10,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.context.bean.override.mockito.MockitoBean
+import org.springframework.test.json.JsonCompareMode
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
@@ -28,16 +28,14 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	private val alice = UserRecord(1, "alice", "alice@example.com", OffsetDateTime.parse("2026-01-01T00:00:00Z"))
 
 	@Test
-	fun 创建成功返回201和统一响应() {
+	fun 创建成功返回201和新建的用户() {
 		whenever(service.create("alice", "alice@example.com", "password1")).thenReturn(alice)
 
 		// 注册无需登录
 		postUser("""{"name": "alice", "email": "alice@example.com", "password": "password1"}""").andExpect {
 			status { isCreated() }
-			jsonPath("$.code") { value(0) }
-			jsonPath("$.message") { value("ok") }
-			jsonPath("$.data.id") { value(1) }
-			jsonPath("$.data.createdAt") { value("2026-01-01T00:00:00Z") }
+			jsonPath("$.id") { value(1) }
+			jsonPath("$.createdAt") { value("2026-01-01T00:00:00Z") }
 		}
 	}
 
@@ -47,21 +45,20 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 
 		mvc.get("/api/v1/users/me") { with(jwt().jwt { it.subject("1") }) }.andExpect {
 			status { isOk() }
-			jsonPath("$.data.email") { value("alice@example.com") }
+			jsonPath("$.email") { value("alice@example.com") }
 		}
 	}
 
 	@Test
-	fun 删除成功时data为null() {
+	fun 删除成功返回204且没有响应体() {
 		mvc.delete("/api/v1/users/1") { with(jwt()) }.andExpect {
-			status { isOk() }
-			jsonPath("$.code") { value(0) }
-			jsonPath("$.data") { value(nullValue()) }
+			status { isNoContent() }
+			content { string("") }
 		}
 	}
 
 	@Test
-	fun 请求参数不合法返回400且不带业务码() {
+	fun 请求参数不合法返回400且没有业务码() {
 		val responses = listOf(
 			postUser("""{"name": "", "email": "not-an-email", "password": "password1"}"""),
 			// 缺少字段
@@ -74,9 +71,9 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 		for (response in responses) {
 			response.andExpect {
 				status { isBadRequest() }
-				jsonPath("$.code") { value(nullValue()) }
-				jsonPath("$.message") { value(nullValue()) }
-				jsonPath("$.data") { value(nullValue()) }
+				content { contentType(MediaType.APPLICATION_PROBLEM_JSON) }
+				jsonPath("$.status") { value(400) }
+				jsonPath("$.code") { doesNotExist() }
 			}
 		}
 	}
@@ -87,8 +84,13 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 
 		mvc.get("/api/v1/users/9") { with(jwt()) }.andExpect {
 			status { isNotFound() }
-			jsonPath("$.code") { value(40401) }
-			jsonPath("$.message") { value("user not found: id=9") }
+			content {
+				contentType(MediaType.APPLICATION_PROBLEM_JSON)
+				json(
+					"""{"title":"Not Found","status":404,"detail":"user not found: id=9","instance":"/api/v1/users/9","code":40401}""",
+					JsonCompareMode.STRICT,
+				)
+			}
 		}
 	}
 
@@ -98,8 +100,7 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 
 		mvc.get("/api/v1/users/1") { with(jwt()) }.andExpect {
 			status { isInternalServerError() }
-			jsonPath("$.code") { value(nullValue()) }
-			jsonPath("$.message") { value(nullValue()) }
+			content { json("""{"title":"Internal Server Error","status":500,"instance":"/api/v1/users/1"}""", JsonCompareMode.STRICT) }
 		}
 	}
 

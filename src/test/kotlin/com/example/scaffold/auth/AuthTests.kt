@@ -1,7 +1,6 @@
 package com.example.scaffold.auth
 
 import com.example.scaffold.TestcontainersConfiguration
-import com.example.scaffold.platform.ApiResponse
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient
@@ -31,17 +30,15 @@ class AuthTests(
 	@Autowired private val client: RestTestClient,
 	@Autowired private val jwtEncoder: JwtEncoder,
 ) {
-	private val unauthorized = """{"code":null,"message":null,"data":null}"""
-
 	@Test
 	fun 注册登录后可以访问需要登录的接口() {
 		register("alice@example.com", "password1")
 		val token = login("alice@example.com", "password1").expectStatus().isOk()
-			.returnResult<ApiResponse<AccessToken>>().responseBody!!.data!!.token
+			.returnResult<AccessToken>().responseBody!!.token
 
 		get("/api/v1/users/me", token)
 			.expectStatus().isOk()
-			.expectBody().jsonPath("$.data.email").isEqualTo("alice@example.com")
+			.expectBody().jsonPath("$.email").isEqualTo("alice@example.com")
 	}
 
 	@Test
@@ -53,7 +50,10 @@ class AuthTests(
 		for ((email, password) in attempts) {
 			login(email, password)
 				.expectStatus().isUnauthorized()
-				.expectBody().json("""{"code":40101,"message":"invalid email or password","data":null}""", JsonCompareMode.STRICT)
+				.expectBody().json(
+					"""{"title":"Unauthorized","status":401,"detail":"invalid email or password","instance":"/api/v1/auth/login","code":40101}""",
+					JsonCompareMode.STRICT,
+				)
 		}
 	}
 
@@ -62,7 +62,8 @@ class AuthTests(
 		get("/api/v1/users/1", token = null)
 			.expectStatus().isUnauthorized()
 			.expectHeader().valueMatches("WWW-Authenticate", "Bearer.*")
-			.expectBody().json(unauthorized, JsonCompareMode.STRICT)
+			.expectHeader().contentType(MediaType.APPLICATION_PROBLEM_JSON)
+			.expectBody().json(unauthorized("/api/v1/users/1"), JsonCompareMode.STRICT)
 	}
 
 	@Test
@@ -75,7 +76,7 @@ class AuthTests(
 			get("/api/v1/users/me", token)
 				.expectStatus().isUnauthorized()
 				.expectHeader().valueMatches("WWW-Authenticate", ".*invalid_token.*")
-				.expectBody().json(unauthorized, JsonCompareMode.STRICT)
+				.expectBody().json(unauthorized("/api/v1/users/me"), JsonCompareMode.STRICT)
 		}
 	}
 
@@ -83,6 +84,9 @@ class AuthTests(
 	fun 健康检查无需登录() {
 		get("/actuator/health", token = null).expectStatus().isOk()
 	}
+
+	/** Spring Security 拒绝请求时没有业务码，只有状态码和 title。 */
+	private fun unauthorized(path: String) = """{"title":"Unauthorized","status":401,"instance":"$path"}"""
 
 	private fun sign(encoder: JwtEncoder, expiresAt: Instant): String {
 		val claims = JwtClaimsSet.builder().subject("1").issuedAt(expiresAt - Duration.ofHours(1)).expiresAt(expiresAt).build()

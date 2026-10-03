@@ -37,22 +37,23 @@ export APP_JWT_SECRET=$(openssl rand -base64 48)   # JWT 签名密钥，必填�
 
 **分层**：Controller（参数校验、组装响应）→ Service（业务逻辑、事务边界）→ Mapper（SQL）。Controller 不直接调用 Mapper。示例中直接返回记录类 `UserRecord`；表中有敏感字段（如密码哈希）时，需要单独定义响应类，避免字段随表结构泄露到接口。
 
-**统一响应**：所有接口返回 `ApiResponse`，Controller 中显式用 `ApiResponse.ok(...)` 包装：
+**响应格式**：成功时直接返回资源，不额外包装，用 HTTP 状态码表达结果；错误统一为 [Problem Details](https://www.rfc-editor.org/rfc/rfc9457)（`application/problem+json`）。
+
+- 成功：Controller 直接返回记录类或响应类，HTTP 200；创建为 201（`@ResponseStatus(HttpStatus.CREATED)`），无返回内容为 204（`@ResponseStatus(HttpStatus.NO_CONTENT)`，函数返回 `Unit`）。
+- 分页：返回 `Page`：`{"items": [...], "total": 3}`，页码从 1 开始。
+
+**错误**：响应体为 Problem Details，只有业务错误带业务码 `code`：
 
 ```json
-{"code": 0, "message": "ok", "data": {...}}
-{"code": 40401, "message": "user not found: id=9", "data": null}
-{"code": null, "message": null, "data": null}
+{"title": "Not Found", "status": 404, "detail": "user not found: id=9", "instance": "/api/v1/users/9", "code": 40401}
+{"title": "Bad Request", "status": 400, "detail": "Invalid request content.", "instance": "/api/v1/users"}
+{"title": "Internal Server Error", "status": 500, "instance": "/api/v1/users/1"}
 ```
 
-- 成功：`code` 为 0，HTTP 200（创建为 201，用 `@ResponseStatus(HttpStatus.CREATED)`）；无返回数据时用 `ApiResponse.ok()`，`data` 为 `null`。
-- 分页：`data` 为 `Page`：`{"items": [...], "total": 3}`，页码从 1 开始。
-
-**错误**：只有业务错误带业务码和提示信息，其他错误只用 HTTP 状态码表达。
-
-- **业务错误**：抛 `AppException(code, message)`，HTTP 状态码由业务码推出。业务码为 5 位数，前三位即 HTTP 状态码（40401 → 404），后两位区分同一状态下的不同错误；`message` 原样返回给客户端，不要放内部细节。各领域把错误集中定义为直接抛出异常的函数（返回 `Nothing`），调用处写作 `mapper.findById(id) ?: UserErrors.notFound(id)`，见 `user/UserErrors.kt`。
-- **请求错误**：参数校验失败、请求体格式错误、参数类型不匹配、404、405、415 等，返回对应的 4xx 状态码，`code` 和 `message` 为 `null`（405、415 保留 `Allow`、`Accept` 响应头）。
-- **其他异常**：返回 500，`code` 和 `message` 为 `null`，不暴露细节，记录错误日志。
+- **业务错误**：抛 `AppException(code, message)`，HTTP 状态码由业务码推出，`message` 作为 `detail` 原样返回给客户端，不要放内部细节。业务码为 5 位数，前三位即 HTTP 状态码（40401 → 404），后两位区分同一状态下的不同错误，客户端按 `code` 区分具体错误。各领域把错误集中定义为直接抛出异常的函数（返回 `Nothing`），调用处写作 `mapper.findById(id) ?: UserErrors.notFound(id)`，见 `user/UserErrors.kt`。
+- **请求错误**：参数校验失败、请求体格式错误、参数类型不匹配、404、405、415 等，返回对应的 4xx 状态码，沿用 Spring 生成的 Problem Details（`detail` 为通用描述，不含字段级错误），没有 `code`（405、415 保留 `Allow`、`Accept` 响应头）。
+- **其他异常**：返回 500，只有 `title`、`status`、`instance`，不暴露细节，记录错误日志。
+- `type` 未使用（缺省即 `about:blank`）；`instance` 为出错的请求路径，经 `/error` 转发的错误也是原始路径。
 
 `ErrorHandler`（`platform/ErrorHandler.kt`）是所有错误的统一出口，有两个入口：
 
@@ -71,13 +72,13 @@ Tomcat 在解析阶段就拒绝的非法请求（如格式错误的请求行）�
 curl -X POST localhost:8080/api/v1/users -H 'Content-Type: application/json' \
   -d '{"name": "alice", "email": "alice@example.com", "password": "password1"}'   # 注册
 curl -X POST localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' \
-  -d '{"email": "alice@example.com", "password": "password1"}'                    # 返回 {"data": {"token": "...", "expiresAt": "..."}}
+  -d '{"email": "alice@example.com", "password": "password1"}'                    # 返回 {"token": "...", "expiresAt": "..."}
 curl localhost:8080/api/v1/users/me -H "Authorization: Bearer $TOKEN"
 ```
 
 - **公开接口**：注册（`POST /api/v1/users`）、登录、`/actuator/health/**`、`/error`，在 `SecurityConfig` 中逐个列出；其余接口都要求登录。新增公开接口时加到这里。
 - **当前用户**：Controller 参数写 `@AuthenticationPrincipal jwt: Jwt`，用 `jwt.userId` 取用户 id（token 的 `sub`），需要用户信息时再查库，见 `UserController.me`。
-- **401**：未带 token、token 过期、签名错误时返回 401，响应体为统一格式（`code`、`message` 为 null），带 `WWW-Authenticate: Bearer ...` 头。Spring Security 在 Filter 中拒绝请求，响应体由入口点调用 `sendError` 转发到 `/error` 写出，所以 `/error` 必须公开。登录失败是业务错误，返回 `40101`，不区分邮箱不存在和密码错误。
+- **401**：未带 token、token 过期、签名错误时返回 401，响应体为 Problem Details（没有 `code`），带 `WWW-Authenticate: Bearer ...` 头。Spring Security 在 Filter 中拒绝请求，响应体由入口点调用 `sendError` 转发到 `/error` 写出，所以 `/error` 必须公开。登录失败是业务错误，返回 `40101`，不区分邮箱不存在和密码错误。
 - **token**：HS256 签名，`sub` 为用户 id，有效期 `app.jwt.ttl`（默认 2 小时）。密钥 `app.jwt.secret` 至少 32 字节，没有默认值，用环境变量 `APP_JWT_SECRET` 提供；测试和 `bootTestRun` 用 `src/test/resources/config/application.yaml` 中的测试密钥。JWT 签发后到过期前无法吊销：没有服务端注销，改密码、封号后旧 token 仍然有效，需要时缩短有效期或另加吊销名单。
 - **密码**：`PasswordEncoder` 默认 BCrypt，哈希带算法前缀（`{bcrypt}...`）存入 `users.password_hash`，记录类 `UserRecord` 不含该字段。BCrypt 最多处理 72 字节，注册时按字节校验长度（中文一个字 3 字节）。
 - **以后加角色**：需要 403 时，像 401 一样配置 `accessDeniedHandler`（默认的同样不写响应体）。用 `@PreAuthorize` 做方法级授权时，它抛出的 `AccessDeniedException` 会先被 `ErrorHandler` 捕获，需要在 `when` 中映射为 403，否则会返回 500。

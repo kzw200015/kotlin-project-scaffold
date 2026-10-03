@@ -13,6 +13,7 @@ import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.core.Ordered
+import org.springframework.http.MediaType
 import org.springframework.test.json.JsonCompareMode
 import org.springframework.test.web.servlet.client.RestTestClient
 import org.springframework.web.filter.OncePerRequestFilter
@@ -23,13 +24,16 @@ import java.io.IOException
 @AutoConfigureRestTestClient
 @Import(TestcontainersConfiguration::class, ErrorHandlerTests.FailingFilterConfig::class)
 class ErrorHandlerTests(@Autowired private val client: RestTestClient) {
-	private val empty = """{"code":null,"message":null,"data":null}"""
-
 	@Test
 	fun Filter抛出业务异常按业务码返回() {
 		get("/fail/app")
 			.expectStatus().isUnauthorized()
-			.expectBody().json("""{"code":40101,"message":"unauthorized","data":null}""", JsonCompareMode.STRICT)
+			.expectHeader().contentType(MediaType.APPLICATION_PROBLEM_JSON)
+			// instance 为原始请求路径，而不是转发后的 /error
+			.expectBody().json(
+				"""{"title":"Unauthorized","status":401,"detail":"unauthorized","instance":"/fail/app","code":40101}""",
+				JsonCompareMode.STRICT,
+			)
 	}
 
 	@Test
@@ -38,7 +42,7 @@ class ErrorHandlerTests(@Autowired private val client: RestTestClient) {
 		for (path in listOf("/fail/unexpected", "/fail/checked")) {
 			get(path)
 				.expectStatus().isEqualTo(500)
-				.expectBody().json(empty, JsonCompareMode.STRICT)
+				.expectBody().json("""{"title":"Internal Server Error","status":500,"instance":"$path"}""", JsonCompareMode.STRICT)
 		}
 	}
 
@@ -47,7 +51,7 @@ class ErrorHandlerTests(@Autowired private val client: RestTestClient) {
 		get("/fail/send-error")
 			.expectStatus().isUnauthorized()
 			.expectHeader().valueEquals("WWW-Authenticate", "Bearer")
-			.expectBody().json(empty, JsonCompareMode.STRICT)
+			.expectBody().json("""{"title":"Unauthorized","status":401,"instance":"/fail/send-error"}""", JsonCompareMode.STRICT)
 	}
 
 	private fun get(path: String) = client.get().uri(path).exchange()

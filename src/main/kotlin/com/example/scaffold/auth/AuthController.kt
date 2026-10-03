@@ -1,6 +1,5 @@
 package com.example.scaffold.auth
 
-import com.example.scaffold.platform.ApiResponse
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import org.springframework.web.bind.annotation.PostMapping
@@ -14,8 +13,8 @@ class AuthController(private val service: AuthService) {
 
 	/** 登录，无需登录（见 SecurityConfig）。之后的请求带上 `Authorization: Bearer <token>`。 */
 	@PostMapping("/login")
-	fun login(@Valid @RequestBody req: LoginRequest): ApiResponse<AccessToken> =
-		ApiResponse.ok(service.login(req.email, req.password))
+	fun login(@Valid @RequestBody req: LoginRequest): AccessToken =
+		service.login(req.email, req.password)
 }
 
 data class LoginRequest(

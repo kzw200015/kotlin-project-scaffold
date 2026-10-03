@@ -1,6 +1,5 @@
 package com.example.scaffold.user
 
-import com.example.scaffold.platform.ApiResponse
 import com.example.scaffold.platform.Page
 import com.example.scaffold.platform.userId
 import jakarta.validation.Valid
@@ -31,34 +30,34 @@ class UserController(private val service: UserService) {
 	/** 注册，无需登录（见 SecurityConfig）。 */
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
-	fun create(@Valid @RequestBody req: CreateUserRequest): ApiResponse<UserRecord> =
-		ApiResponse.ok(service.create(req.name, req.email, req.password))
+	fun create(@Valid @RequestBody req: CreateUserRequest): UserRecord =
+		service.create(req.name, req.email, req.password)
 
 	/** 当前登录用户。 */
 	@GetMapping("/me")
-	fun me(@AuthenticationPrincipal jwt: Jwt): ApiResponse<UserRecord> =
-		ApiResponse.ok(service.get(jwt.userId))
+	fun me(@AuthenticationPrincipal jwt: Jwt): UserRecord =
+		service.get(jwt.userId)
 
 	@GetMapping("/{id}")
-	fun get(@PathVariable id: Long): ApiResponse<UserRecord> =
-		ApiResponse.ok(service.get(id))
+	fun get(@PathVariable id: Long): UserRecord =
+		service.get(id)
 
 	@GetMapping
 	fun search(
 		@RequestParam keyword: String?,
 		@RequestParam(defaultValue = "1") @Min(1) @Max(100_000) page: Int,
 		@RequestParam(defaultValue = "20") @Min(1) @Max(100) size: Int,
-	): ApiResponse<Page<UserRecord>> =
-		ApiResponse.ok(service.search(keyword, page, size))
+	): Page<UserRecord> =
+		service.search(keyword, page, size)
 
 	@PatchMapping("/{id}")
-	fun rename(@PathVariable id: Long, @Valid @RequestBody req: RenameUserRequest): ApiResponse<UserRecord> =
-		ApiResponse.ok(service.rename(id, req.name))
+	fun rename(@PathVariable id: Long, @Valid @RequestBody req: RenameUserRequest): UserRecord =
+		service.rename(id, req.name)
 
 	@DeleteMapping("/{id}")
-	fun delete(@PathVariable id: Long): ApiResponse<Nothing> {
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	fun delete(@PathVariable id: Long) {
 		service.delete(id)
-		return ApiResponse.ok()
 	}
 }
 
