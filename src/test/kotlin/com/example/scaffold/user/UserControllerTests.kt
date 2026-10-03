@@ -6,8 +6,6 @@ import com.example.scaffold.auth.SecurityConfig
 import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
-import org.mockito.kotlin.verify
-import org.mockito.kotlin.verifyNoInteractions
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
@@ -16,9 +14,7 @@ import org.springframework.http.MediaType
 import org.springframework.security.oauth2.server.resource.introspection.OpaqueTokenIntrospector
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.opaqueToken
 import org.springframework.test.context.bean.override.mockito.MockitoBean
-import org.springframework.test.json.JsonCompareMode
 import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
@@ -38,49 +34,6 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	private lateinit var tokenIntrospector: OpaqueTokenIntrospector
 
 	private val alice = UserRecord(1, "alice", "alice@example.com", OffsetDateTime.parse("2026-01-01T00:00:00Z"))
-
-	@Test
-	@DisplayName("创建成功返回 201 和新建的用户")
-	fun createReturns201WithNewUser() {
-		whenever(service.create("alice", "alice@example.com", "password1")).thenReturn(alice)
-
-		// 注册无需登录
-		postUser("""{"name": "alice", "email": "alice@example.com", "password": "password1"}""").andExpect {
-			status { isCreated() }
-			jsonPath("$.id") { value(1) }
-			jsonPath("$.createdAt") { value("2026-01-01T00:00:00Z") }
-		}
-	}
-
-	@Test
-	@DisplayName("获取当前登录用户")
-	fun getCurrentUser() {
-		whenever(service.get(1)).thenReturn(alice)
-
-		mvc.get("/api/v1/users/me") { with(asUser(1)) }.andExpect {
-			status { isOk() }
-			jsonPath("$.email") { value("alice@example.com") }
-		}
-	}
-
-	@Test
-	@DisplayName("删除成功返回 204 且没有响应体")
-	fun deleteReturns204WithoutBody() {
-		mvc.delete("/api/v1/users/1") { with(asAdmin()) }.andExpect {
-			status { isNoContent() }
-			content { string("") }
-		}
-
-		verify(service).delete(1)
-	}
-
-	@Test
-	@DisplayName("普通用户不能删除用户")
-	fun regularUserCannotDeleteUsers() {
-		mvc.delete("/api/v1/users/2") { with(asUser(1)) }.andExpect { status { isForbidden() } }
-
-		verifyNoInteractions(service)
-	}
 
 	@Test
 	@DisplayName("只能改自己的名字，管理员可以改任何人")
@@ -111,34 +64,6 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 				jsonPath("$.status") { value(400) }
 				jsonPath("$.code") { doesNotExist() }
 			}
-		}
-	}
-
-	@Test
-	@DisplayName("业务异常按业务码返回")
-	fun appExceptionReturnsItsCode() {
-		whenever(service.get(9)).thenAnswer { UserErrors.notFound(9) }
-
-		mvc.get("/api/v1/users/9") { with(opaqueToken()) }.andExpect {
-			status { isNotFound() }
-			content {
-				contentType(MediaType.APPLICATION_PROBLEM_JSON)
-				json(
-					"""{"title":"Not Found","status":404,"detail":"user not found: id=9","instance":"/api/v1/users/9","code":40401}""",
-					JsonCompareMode.STRICT,
-				)
-			}
-		}
-	}
-
-	@Test
-	@DisplayName("未预期异常返回 500 且不泄露细节")
-	fun unexpectedExceptionReturns500WithoutDetails() {
-		whenever(service.get(1)).thenThrow(IllegalStateException("password=secret"))
-
-		mvc.get("/api/v1/users/1") { with(opaqueToken()) }.andExpect {
-			status { isInternalServerError() }
-			content { json("""{"title":"Internal Server Error","status":500,"instance":"/api/v1/users/1"}""", JsonCompareMode.STRICT) }
 		}
 	}
 

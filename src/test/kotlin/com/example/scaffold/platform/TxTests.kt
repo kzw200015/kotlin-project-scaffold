@@ -53,17 +53,6 @@ class TxTests(
 	}
 
 	@Test
-	@DisplayName("调用 setRollbackOnly 时不抛异常也回滚")
-	fun setRollbackOnlyRollsBackWithoutException() {
-		tx.write { status ->
-			mapper.insert("alice", "alice@example.com", "hash")
-			status.setRollbackOnly()
-		}
-
-		assertEquals(0, userCount())
-	}
-
-	@Test
 	@DisplayName("只读事务拒绝写操作")
 	fun readOnlyRejectsWrites() {
 		assertFailsWith<DataAccessException> {

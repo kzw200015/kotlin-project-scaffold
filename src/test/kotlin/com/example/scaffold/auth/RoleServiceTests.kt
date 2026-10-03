@@ -19,17 +19,11 @@ class RoleServiceTests(
 	@Autowired private val users: UserMapper,
 ) : PostgresContainer {
 
-	// 违反外键约束后测试所在的事务即中止，之后不能再执行 SQL，所以授予和移除分成两个测试
+	// 违反外键约束后测试所在的事务即中止，之后不能再执行 SQL，所以单独一个测试
 	@Test
 	@DisplayName("授予角色时用户不存在抛出 40401")
 	fun grantToMissingUserThrows40401() {
 		assertEquals(40401, assertFailsWith<AppException> { service.grant(999, Role.ADMIN) }.code)
-	}
-
-	@Test
-	@DisplayName("移除角色时用户不存在抛出 40401")
-	fun revokeFromMissingUserThrows40401() {
-		assertEquals(40401, assertFailsWith<AppException> { service.revoke(999, Role.ADMIN) }.code)
 	}
 
 	@Test

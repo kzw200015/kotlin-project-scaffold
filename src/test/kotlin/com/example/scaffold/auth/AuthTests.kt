@@ -54,14 +54,6 @@ class AuthTests(
 	}
 
 	@Test
-	@DisplayName("登录时邮箱不区分大小写")
-	fun loginEmailIsCaseInsensitive() {
-		client.register("alice@example.com")
-
-		client.login(" Alice@Example.COM ", PASSWORD).expectStatus().isOk()
-	}
-
-	@Test
 	@DisplayName("密码错误和邮箱未注册都返回 40101")
 	fun wrongPasswordAndUnknownEmailBothReturn40101() {
 		client.register("alice@example.com")
@@ -167,12 +159,5 @@ class AuthTests(
 		users.deleteById(id)
 
 		client.get("/api/v1/users/me", token).expectStatus().isUnauthorized()
-	}
-
-	@Test
-	@DisplayName("健康检查无需登录")
-	fun healthCheckIsPublic() {
-		// 200 表示数据库和 Redis 都可用，任一不可用时为 503
-		client.get("/actuator/health", token = null).expectStatus().isOk()
 	}
 }

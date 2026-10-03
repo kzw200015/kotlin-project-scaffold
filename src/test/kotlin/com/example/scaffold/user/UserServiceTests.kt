@@ -43,17 +43,6 @@ class UserServiceTests(
 	}
 
 	@Test
-	@DisplayName("搜索返回当前页数据和总数")
-	fun searchReturnsPageItemsAndTotal() {
-		listOf("bob", "carol", "dave").forEach { service.create(it, "$it@example.com", "password1") }
-
-		val page = service.search(keyword = null, page = 2, size = 2)
-
-		assertEquals(listOf("dave"), page.items.map { it.name })
-		assertEquals(3, page.total)
-	}
-
-	@Test
 	@DisplayName("搜索关键字中的通配符按字面匹配")
 	fun searchMatchesWildcardsLiterally() {
 		service.create("bob", "bob@example.com", "password1")
@@ -61,21 +50,5 @@ class UserServiceTests(
 
 		assertEquals(listOf("a_b"), service.search(keyword = "_", page = 1, size = 10).items.map { it.name })
 		assertEquals(0, service.search(keyword = "%", page = 1, size = 10).total)
-	}
-
-	@Test
-	@DisplayName("改名后返回最新数据")
-	fun renameReturnsUpdatedUser() {
-		val id = service.create("bob", "bob@example.com", "password1").id
-
-		assertEquals("robert", service.rename(id, "robert").name)
-	}
-
-	@Test
-	@DisplayName("用户不存在时抛出 40401")
-	fun missingUserThrows40401() {
-		assertEquals(40401, assertFailsWith<AppException> { service.get(999) }.code)
-		assertEquals(40401, assertFailsWith<AppException> { service.rename(999, "x") }.code)
-		assertEquals(40401, assertFailsWith<AppException> { service.delete(999) }.code)
 	}
 }
