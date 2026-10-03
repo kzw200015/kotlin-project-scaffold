@@ -3,7 +3,6 @@ package com.example.scaffold.user
 import com.example.scaffold.platform.SecurityConfig
 import org.hamcrest.Matchers.containsString
 import org.hamcrest.Matchers.nullValue
-import org.hamcrest.Matchers.startsWith
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
@@ -33,34 +32,12 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 		whenever(service.create("alice", "alice@example.com", "password1")).thenReturn(alice)
 
 		// 注册无需登录
-		mvc.post("/api/v1/users") {
-			contentType = MediaType.APPLICATION_JSON
-			content = """{"name": "alice", "email": "alice@example.com", "password": "password1"}"""
-		}.andExpect {
+		postUser("""{"name": "alice", "email": "alice@example.com", "password": "password1"}""").andExpect {
 			status { isCreated() }
 			jsonPath("$.code") { value(0) }
 			jsonPath("$.message") { value("ok") }
 			jsonPath("$.data.id") { value(1) }
 			jsonPath("$.data.createdAt") { value("2026-01-01T00:00:00Z") }
-		}
-	}
-
-	@Test
-	fun 密码超过72字节返回400() {
-		mvc.post("/api/v1/users") {
-			contentType = MediaType.APPLICATION_JSON
-			// 30 个汉字：30 个字符，90 字节
-			content = """{"name": "alice", "email": "alice@example.com", "password": "${"密".repeat(30)}"}"""
-		}.andExpect {
-			status { isBadRequest() }
-		}
-	}
-
-	@Test
-	fun 未登录访问返回401并带上WWW_Authenticate头() {
-		mvc.get("/api/v1/users/1").andExpect {
-			status { isUnauthorized() }
-			header { string("WWW-Authenticate", startsWith("Bearer")) }
 		}
 	}
 
@@ -75,39 +52,32 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	}
 
 	@Test
-	fun 请求体校验失败返回400且不带业务码() {
-		mvc.post("/api/v1/users") {
-			contentType = MediaType.APPLICATION_JSON
-			content = """{"name": "", "email": "not-an-email"}"""
-		}.andExpect {
-			status { isBadRequest() }
-			jsonPath("$.code") { value(nullValue()) }
-			jsonPath("$.message") { value(nullValue()) }
+	fun 删除成功时data为null() {
+		mvc.delete("/api/v1/users/1") { with(jwt()) }.andExpect {
+			status { isOk() }
+			jsonPath("$.code") { value(0) }
 			jsonPath("$.data") { value(nullValue()) }
 		}
 	}
 
 	@Test
-	fun 请求体缺少字段返回400() {
-		mvc.post("/api/v1/users") {
-			contentType = MediaType.APPLICATION_JSON
-			content = """{"name": "alice"}"""
-		}.andExpect {
-			status { isBadRequest() }
-		}
-	}
-
-	@Test
-	fun 查询参数校验失败返回400() {
-		mvc.get("/api/v1/users?size=1000") { with(jwt()) }.andExpect {
-			status { isBadRequest() }
-		}
-	}
-
-	@Test
-	fun 路径参数类型错误返回400() {
-		mvc.get("/api/v1/users/abc") { with(jwt()) }.andExpect {
-			status { isBadRequest() }
+	fun 请求参数不合法返回400且不带业务码() {
+		val responses = listOf(
+			postUser("""{"name": "", "email": "not-an-email", "password": "password1"}"""),
+			// 缺少字段
+			postUser("""{"name": "alice"}"""),
+			// 30 个汉字：30 个字符，90 字节，超过 BCrypt 72 字节上限
+			postUser("""{"name": "alice", "email": "alice@example.com", "password": "${"密".repeat(30)}"}"""),
+			mvc.get("/api/v1/users?size=1000") { with(jwt()) },
+			mvc.get("/api/v1/users/abc") { with(jwt()) },
+		)
+		for (response in responses) {
+			response.andExpect {
+				status { isBadRequest() }
+				jsonPath("$.code") { value(nullValue()) }
+				jsonPath("$.message") { value(nullValue()) }
+				jsonPath("$.data") { value(nullValue()) }
+			}
 		}
 	}
 
@@ -134,22 +104,14 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	}
 
 	@Test
-	fun 未知路径返回404() {
+	fun 路径方法或ContentType不匹配时返回对应状态码() {
 		mvc.get("/api/v1/nope") { with(jwt()) }.andExpect {
 			status { isNotFound() }
 		}
-	}
-
-	@Test
-	fun 不支持的方法返回405并带上Allow头() {
 		mvc.put("/api/v1/users/1") { with(jwt()) }.andExpect {
 			status { isMethodNotAllowed() }
 			header { string("Allow", containsString("GET")) }
 		}
-	}
-
-	@Test
-	fun 不支持的ContentType返回415() {
 		mvc.post("/api/v1/users") {
 			contentType = MediaType.TEXT_PLAIN
 			content = "alice"
@@ -158,12 +120,8 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 		}
 	}
 
-	@Test
-	fun 删除成功时data为null() {
-		mvc.delete("/api/v1/users/1") { with(jwt()) }.andExpect {
-			status { isOk() }
-			jsonPath("$.code") { value(0) }
-			jsonPath("$.data") { value(nullValue()) }
-		}
+	private fun postUser(json: String) = mvc.post("/api/v1/users") {
+		contentType = MediaType.APPLICATION_JSON
+		content = json
 	}
 }

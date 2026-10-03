@@ -5,64 +5,52 @@ import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.core.Ordered
+import org.springframework.test.json.JsonCompareMode
+import org.springframework.test.web.servlet.client.RestTestClient
 import org.springframework.web.filter.OncePerRequestFilter
 import java.io.IOException
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import kotlin.test.assertEquals
 
 /** 没经过 Controller 的错误（Filter 中抛出异常、调用 sendError）由 Tomcat 转发到 /error，MockMvc 不会转发，需要启动真实服务器验证。 */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureRestTestClient
 @Import(TestcontainersConfiguration::class, ErrorHandlerTests.FailingFilterConfig::class)
-class ErrorHandlerTests(@LocalServerPort private val port: Int) {
+class ErrorHandlerTests(@Autowired private val client: RestTestClient) {
+	private val empty = """{"code":null,"message":null,"data":null}"""
 
 	@Test
 	fun Filter抛出业务异常按业务码返回() {
-		val response = get("/fail/app")
-
-		assertEquals(401, response.statusCode())
-		assertEquals("""{"code":40101,"message":"unauthorized","data":null}""", response.body())
+		get("/fail/app")
+			.expectStatus().isUnauthorized()
+			.expectBody().json("""{"code":40101,"message":"unauthorized","data":null}""", JsonCompareMode.STRICT)
 	}
 
 	@Test
 	fun Filter抛出未预期异常返回500且不泄露细节() {
-		val response = get("/fail/unexpected")
-
-		assertEquals(500, response.statusCode())
-		assertEquals("""{"code":null,"message":null,"data":null}""", response.body())
-	}
-
-	@Test
-	fun Filter抛出checked异常返回500() {
-		val response = get("/fail/checked")
-
-		assertEquals(500, response.statusCode())
-		assertEquals("""{"code":null,"message":null,"data":null}""", response.body())
+		// checked 异常会被 Tomcat 包在 ServletException 中
+		for (path in listOf("/fail/unexpected", "/fail/checked")) {
+			get(path)
+				.expectStatus().isEqualTo(500)
+				.expectBody().json(empty, JsonCompareMode.STRICT)
+		}
 	}
 
 	@Test
 	fun Filter调用sendError时保留状态码和响应头() {
-		val response = get("/fail/send-error")
-
-		assertEquals(401, response.statusCode())
-		assertEquals("Bearer", response.headers().firstValue("WWW-Authenticate").orElse(null))
-		assertEquals("""{"code":null,"message":null,"data":null}""", response.body())
+		get("/fail/send-error")
+			.expectStatus().isUnauthorized()
+			.expectHeader().valueEquals("WWW-Authenticate", "Bearer")
+			.expectBody().json(empty, JsonCompareMode.STRICT)
 	}
 
-	private fun get(path: String): HttpResponse<String> =
-		HttpClient.newHttpClient().send(
-			HttpRequest.newBuilder(URI("http://localhost:$port$path")).build(),
-			HttpResponse.BodyHandlers.ofString(),
-		)
+	private fun get(path: String) = client.get().uri(path).exchange()
 
 	@TestConfiguration
 	class FailingFilterConfig {

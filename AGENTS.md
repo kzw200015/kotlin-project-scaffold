@@ -17,7 +17,7 @@ Spring Boot 4.1 + Kotlin 2.3 + MyBatis + PostgreSQL。完整约定见 README.md�
 - **事务**：不用 `@Transactional`，用 `platform/Tx.kt` 显式开启：`tx.write { }` / `tx.read { }`。
 - **并发**：Controller / Service 写普通函数（跑在虚拟线程上），不写 `suspend` Controller；需要并发时写 `runBlocking { async(Dispatchers.Virtual) { } }`，不要把调度器传给 `runBlocking`。
 - **分包**：按领域分包（如 `user/`），跨领域基础设施放 `platform/`。
-- **测试**：Mapper / Service 用 `@MybatisTest` + Testcontainers 跑真实 SQL（Service 需 `@Import(XxxService::class, Tx::class)`，用到密码时再导入 `PasswordEncoderConfig`）；Controller 用 `@WebMvcTest` + `@Import(SecurityConfig::class)` + `@MockitoBean` mock Service，需要登录的请求加 `with(jwt())`，验证响应格式与错误码；经过 `/error` 的响应体（Filter 异常、401）用 `RANDOM_PORT` 启动真实服务器验证，见 `auth/AuthTests.kt`；mock 用 mockito-kotlin。
+- **测试**：Mapper / Service 用 `@MybatisTest` + Testcontainers 跑真实 SQL（Service 需 `@Import(XxxService::class, Tx::class)`，用到密码时再导入 `PasswordEncoderConfig`）；Controller 用 `@WebMvcTest` + `@Import(SecurityConfig::class)` + `@MockitoBean` mock Service，需要登录的请求加 `with(jwt())`，验证响应格式与错误码；经过 `/error` 的响应体（Filter 异常、401）用 `RANDOM_PORT` + `@AutoConfigureRestTestClient` 启动真实服务器、注入 `RestTestClient` 验证，见 `auth/AuthTests.kt`；mock 用 mockito-kotlin。
 - **命名**：业务代码（含类名）用英文 camelCase；测试方法名用中文描述被测场景，不用反引号句子，也不加 `@DisplayName`（如 `fun 只读事务拒绝写操作()`）。方法名中不能有空格和中文标点，需要分隔时用下划线。
 
 ## 常用命令
