@@ -1,6 +1,7 @@
 package com.example.scaffold.user
 
 import com.example.scaffold.TestcontainersConfiguration
+import com.example.scaffold.platform.Role
 import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
 import org.springframework.beans.factory.annotation.Autowired
@@ -49,5 +50,28 @@ class UserMapperTests(@Autowired private val mapper: UserMapper) {
 
 		assertEquals(1, mapper.deleteById(id))
 		assertNull(mapper.findById(id))
+	}
+
+	@Test
+	fun 授予和移除角色() {
+		val id = mapper.insert("alice", "alice@example.com", "hash").id
+		assertEquals(emptyList(), mapper.findRoles(id))
+
+		assertEquals(1, mapper.addRole(id, Role.ADMIN))
+		// 重复授予不报错
+		assertEquals(0, mapper.addRole(id, Role.ADMIN))
+		assertEquals(listOf(Role.ADMIN), mapper.findRoles(id))
+
+		assertEquals(1, mapper.removeRole(id, Role.ADMIN))
+		assertEquals(emptyList(), mapper.findRoles(id))
+	}
+
+	@Test
+	fun 删除用户时一并删除角色() {
+		val id = mapper.insert("alice", "alice@example.com", "hash").id
+		mapper.addRole(id, Role.ADMIN)
+
+		assertEquals(1, mapper.deleteById(id))
+		assertEquals(emptyList(), mapper.findRoles(id))
 	}
 }

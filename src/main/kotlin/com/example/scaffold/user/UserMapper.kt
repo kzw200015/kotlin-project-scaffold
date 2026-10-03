@@ -1,5 +1,6 @@
 package com.example.scaffold.user
 
+import com.example.scaffold.platform.Role
 import org.apache.ibatis.annotations.Mapper
 
 /**
@@ -23,4 +24,13 @@ interface UserMapper {
 	fun updateName(id: Long, name: String): Int
 
 	fun deleteById(id: Long): Int
+
+	/** 用户的角色，按名称排序；没有角色时为空列表。 */
+	fun findRoles(userId: Long): List<Role>
+
+	/** 授予角色，已有该角色时不变。返回新增的行数。 */
+	fun addRole(userId: Long, role: Role): Int
+
+	/** 移除角色，返回删除的行数。 */
+	fun removeRole(userId: Long, role: Role): Int
 }

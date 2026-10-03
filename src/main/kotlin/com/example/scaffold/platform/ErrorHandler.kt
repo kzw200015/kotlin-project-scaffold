@@ -11,6 +11,8 @@ import org.springframework.http.HttpStatusCode
 import org.springframework.http.ProblemDetail
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.security.access.AccessDeniedException
+import org.springframework.security.core.AuthenticationException
 import org.springframework.web.ErrorResponse
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RequestMapping
@@ -32,6 +34,13 @@ import java.net.URI
 @RestController
 class ErrorHandler : ErrorController {
 	private val log = LoggerFactory.getLogger(javaClass)
+
+	/**
+	 * Spring Security 的异常（主要是 `@PreAuthorize` 拒绝访问）原样抛出，交给过滤器链中的 ExceptionTranslationFilter，
+	 * 与 URL 级授权走同一套 401/403 处理（见 SecurityConfig）。重新抛出原异常时 Spring MVC 不记日志，继续向外抛。
+	 */
+	@ExceptionHandler(AccessDeniedException::class, AuthenticationException::class)
+	fun rethrowSecurityException(e: RuntimeException): Nothing = throw e
 
 	@ExceptionHandler(Exception::class)
 	fun handle(e: Exception, request: HttpServletRequest): ResponseEntity<ProblemDetail>? {

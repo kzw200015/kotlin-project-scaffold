@@ -3,6 +3,7 @@ package com.example.scaffold.user
 import com.example.scaffold.TestcontainersConfiguration
 import com.example.scaffold.platform.AppException
 import com.example.scaffold.platform.PasswordEncoderConfig
+import com.example.scaffold.platform.Role
 import com.example.scaffold.platform.Tx
 import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
@@ -70,5 +71,18 @@ class UserServiceTests(
 		assertEquals(40401, assertFailsWith<AppException> { service.get(999) }.code)
 		assertEquals(40401, assertFailsWith<AppException> { service.rename(999, "x") }.code)
 		assertEquals(40401, assertFailsWith<AppException> { service.delete(999) }.code)
+		assertEquals(40401, assertFailsWith<AppException> { service.grantRole(999, Role.ADMIN) }.code)
+		assertEquals(40401, assertFailsWith<AppException> { service.revokeRole(999, Role.ADMIN) }.code)
+	}
+
+	@Test
+	fun 授予和移除角色可以重复执行() {
+		val id = service.create("alice", "alice@example.com", "password1").id
+
+		repeat(2) { service.grantRole(id, Role.ADMIN) }
+		assertEquals(listOf(Role.ADMIN), mapper.findRoles(id))
+
+		repeat(2) { service.revokeRole(id, Role.ADMIN) }
+		assertEquals(emptyList(), mapper.findRoles(id))
 	}
 }

@@ -1,6 +1,8 @@
 package com.example.scaffold.auth
 
 import com.example.scaffold.platform.JwtProperties
+import com.example.scaffold.platform.ROLES_CLAIM
+import com.example.scaffold.platform.Role
 import com.example.scaffold.user.UserMapper
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm
@@ -21,23 +23,24 @@ class AuthService(
 	/** 用户不存在时拿它比对，使耗时与密码错误时一致。 */
 	private val dummyHash = checkNotNull(passwordEncoder.encode("dummy-password"))
 
-	/** 校验邮箱和密码，签发 token。 */
+	/** 校验邮箱和密码，签发带角色的 token。 */
 	fun login(email: String, password: String): AccessToken {
 		val credential = mapper.findCredentialByEmail(email)
 		val hash = credential?.passwordHash
 		// 用户不存在或未设置密码时也做一次哈希比对，避免通过响应时间判断邮箱是否已注册
 		val matched = passwordEncoder.matches(password, hash ?: dummyHash)
 		if (credential == null || hash == null || !matched) AuthErrors.badCredentials()
-		return issue(credential.id)
+		return issue(credential.id, mapper.findRoles(credential.id))
 	}
 
-	private fun issue(userId: Long): AccessToken {
+	private fun issue(userId: Long, roles: List<Role>): AccessToken {
 		val now = Instant.now()
 		val expiresAt = now + jwt.ttl
 		val claims = JwtClaimsSet.builder()
 			.subject(userId.toString())
 			.issuedAt(now)
 			.expiresAt(expiresAt)
+			.claim(ROLES_CLAIM, roles.map { it.name })
 			.build()
 		val header = JwsHeader.with(MacAlgorithm.HS256).build()
 		val token = jwtEncoder.encode(JwtEncoderParameters.from(header, claims))

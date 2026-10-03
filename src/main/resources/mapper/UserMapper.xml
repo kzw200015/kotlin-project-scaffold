@@ -53,4 +53,23 @@
         DELETE FROM users
         WHERE id = #{id}
     </delete>
+
+    <select id="findRoles" resultType="com.example.scaffold.platform.Role">
+        SELECT role
+        FROM user_roles
+        WHERE user_id = #{userId}
+        ORDER BY role
+    </select>
+
+    <insert id="addRole">
+        INSERT INTO user_roles (user_id, role)
+        VALUES (#{userId}, #{role})
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <delete id="removeRole">
+        DELETE FROM user_roles
+        WHERE user_id = #{userId}
+          AND role = #{role}
+    </delete>
 </mapper>

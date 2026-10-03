@@ -1,5 +1,17 @@
 -- 由 SchemaSnapshotTests 生成，勿手改；表结构变更后执行 ./gradlew updateSchema 更新
 
+CREATE TABLE public.user_roles (
+    user_id bigint NOT NULL,
+    role text NOT NULL,
+    CONSTRAINT user_roles_role_check CHECK ((role = 'ADMIN'::text))
+);
+
+COMMENT ON TABLE public.user_roles IS '用户角色，一个用户可有多个角色；用户删除时一并删除';
+
+COMMENT ON COLUMN public.user_roles.user_id IS '用户 id';
+
+COMMENT ON COLUMN public.user_roles.role IS '角色：ADMIN 管理员。取值与代码中的 Role 枚举一致，新增角色时同时修改 CHECK 约束';
+
 CREATE TABLE public.users (
     id bigint NOT NULL,
     name text NOT NULL,
@@ -27,8 +39,14 @@ ALTER TABLE public.users ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     CACHE 1
 );
 
+ALTER TABLE ONLY public.user_roles
+    ADD CONSTRAINT user_roles_pkey PRIMARY KEY (user_id, role);
+
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_email_key UNIQUE (email);
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.user_roles
+    ADD CONSTRAINT user_roles_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;

@@ -5,6 +5,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.invoke
 import org.springframework.security.config.http.SessionCreationPolicy
@@ -16,26 +17,37 @@ import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.oauth2.jwt.JwtEncoder
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint
+import org.springframework.security.oauth2.server.resource.web.access.BearerTokenAccessDeniedHandler
 import org.springframework.security.web.AuthenticationEntryPoint
+import org.springframework.security.web.access.AccessDeniedHandler
 import org.springframework.security.web.SecurityFilterChain
 import java.time.Duration
 import javax.crypto.spec.SecretKeySpec
 
 /**
  * 鉴权：无状态 JWT，请求头 `Authorization: Bearer <token>`，token 由登录接口签发（见 `auth/AuthService.kt`）。
- * 除下面列出的公开接口外，其余接口都要求登录。
+ * 除下面列出的公开接口外，其余接口都要求登录；按角色限制的接口也在下面列出，依赖方法参数的规则写在方法上（`@PreAuthorize`）。
  */
 @Configuration
+@EnableMethodSecurity
 @EnableConfigurationProperties(JwtProperties::class)
 class SecurityConfig(private val jwt: JwtProperties) {
 
 	@Bean
 	fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
-		// 默认的入口点只设置状态码和 WWW-Authenticate 头、响应体为空；再调用 sendError 转发到 /error，由 ErrorHandler 写成统一格式
-		val bearer = BearerTokenAuthenticationEntryPoint()
+		// 默认的入口点（401）和拒绝处理器（403）只设置状态码和 WWW-Authenticate 头、响应体为空；
+		// 再调用 sendError 转发到 /error，由 ErrorHandler 写成 Problem Details
+		val bearerEntryPoint = BearerTokenAuthenticationEntryPoint()
 		val entryPoint = AuthenticationEntryPoint { request, response, e ->
-			bearer.commence(request, response, e)
+			bearerEntryPoint.commence(request, response, e)
+			response.sendError(response.status)
+		}
+		val bearerDeniedHandler = BearerTokenAccessDeniedHandler()
+		val deniedHandler = AccessDeniedHandler { request, response, e ->
+			bearerDeniedHandler.handle(request, response, e)
 			response.sendError(response.status)
 		}
 
@@ -46,13 +58,20 @@ class SecurityConfig(private val jwt: JwtProperties) {
 				authorize("/actuator/health/**", permitAll)
 				// sendError 和 Filter 异常会转发到 /error，必须放行，否则响应体为空
 				authorize("/error", permitAll)
+				authorize(HttpMethod.DELETE, "/api/v1/users/*", hasRole(Role.ADMIN.name))
+				authorize("/api/v1/users/*/roles/**", hasRole(Role.ADMIN.name))
 				authorize(anyRequest, authenticated)
 			}
 			oauth2ResourceServer {
-				jwt { }
+				jwt { jwtAuthenticationConverter = jwtAuthenticationConverter() }
 				authenticationEntryPoint = entryPoint
 			}
-			exceptionHandling { authenticationEntryPoint = entryPoint }
+			// 没带 token、已登录但没有权限时，由 ExceptionTranslationFilter 调用。方法级授权（@PreAuthorize）的拒绝也经由
+			// ErrorHandler 重新抛出交给它，所以 URL 级和方法级的 401/403 走同一出口
+			exceptionHandling {
+				authenticationEntryPoint = entryPoint
+				accessDeniedHandler = deniedHandler
+			}
 			sessionManagement { sessionCreationPolicy = SessionCreationPolicy.STATELESS }
 			// token 放在请求头而不是 Cookie，浏览器不会自动携带，不存在 CSRF 问题
 			csrf { disable() }
@@ -69,6 +88,16 @@ class SecurityConfig(private val jwt: JwtProperties) {
 	fun jwtDecoder(): JwtDecoder = NimbusJwtDecoder.withSecretKey(secretKey()).macAlgorithm(MacAlgorithm.HS256).build()
 
 	private fun secretKey() = SecretKeySpec(jwt.secret.toByteArray(), "HmacSHA256")
+
+	/** 把 token 的 roles 声明转成权限：`["ADMIN"]` → `ROLE_ADMIN`，供 `hasRole("ADMIN")` 判断。默认读取的是 scope 声明。 */
+	private fun jwtAuthenticationConverter() = JwtAuthenticationConverter().apply {
+		setJwtGrantedAuthoritiesConverter(
+			JwtGrantedAuthoritiesConverter().apply {
+				setAuthoritiesClaimName(ROLES_CLAIM)
+				setAuthorityPrefix("ROLE_")
+			},
+		)
+	}
 }
 
 /** 单独放一个配置类，方便 `@MybatisTest` 等切片测试只导入它。 */

@@ -1,8 +1,9 @@
 package com.example.scaffold.user
 
 import com.example.scaffold.platform.Page
-import com.example.scaffold.platform.escapeLike
+import com.example.scaffold.platform.Role
 import com.example.scaffold.platform.Tx
+import com.example.scaffold.platform.escapeLike
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
@@ -41,5 +42,21 @@ class UserService(private val tx: Tx, private val mapper: UserMapper, private va
 
 	fun delete(id: Long) {
 		if (mapper.deleteById(id) == 0) UserErrors.notFound(id)
+	}
+
+	/** 授予角色，已有时不变。用户重新登录后生效：角色写在 token 里，旧 token 到期前仍是原来的角色。 */
+	fun grantRole(id: Long, role: Role) {
+		tx.write {
+			mapper.findById(id) ?: UserErrors.notFound(id)
+			mapper.addRole(id, role)
+		}
+	}
+
+	/** 移除角色，没有该角色时不变。与 [grantRole] 一样，用户重新登录后生效。 */
+	fun revokeRole(id: Long, role: Role) {
+		tx.write {
+			mapper.findById(id) ?: UserErrors.notFound(id)
+			mapper.removeRole(id, role)
+		}
 	}
 }

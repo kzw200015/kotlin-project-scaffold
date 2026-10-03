@@ -1,6 +1,9 @@
 package com.example.scaffold.auth
 
 import com.example.scaffold.TestcontainersConfiguration
+import com.example.scaffold.platform.Role
+import com.example.scaffold.user.UserMapper
+import com.example.scaffold.user.UserRecord
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient
@@ -21,7 +24,7 @@ import java.time.Duration
 import java.time.Instant
 import javax.crypto.spec.SecretKeySpec
 
-/** 注册、登录、带 token 访问的完整流程。401 的响应体要经过 /error 转发才会写出，MockMvc 不会转发，需要启动真实服务器验证。 */
+/** 注册、登录、带 token 访问的完整流程。401 / 403 的响应体要经过 /error 转发才会写出，MockMvc 不会转发，需要启动真实服务器验证。 */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureRestTestClient
 @Import(TestcontainersConfiguration::class)
@@ -29,14 +32,13 @@ import javax.crypto.spec.SecretKeySpec
 class AuthTests(
 	@Autowired private val client: RestTestClient,
 	@Autowired private val jwtEncoder: JwtEncoder,
+	@Autowired private val mapper: UserMapper,
 ) {
 	@Test
 	fun 注册登录后可以访问需要登录的接口() {
 		register("alice@example.com", "password1")
-		val token = login("alice@example.com", "password1").expectStatus().isOk()
-			.returnResult<AccessToken>().responseBody!!.token
 
-		get("/api/v1/users/me", token)
+		get("/api/v1/users/me", token("alice@example.com", "password1"))
 			.expectStatus().isOk()
 			.expectBody().jsonPath("$.email").isEqualTo("alice@example.com")
 	}
@@ -81,6 +83,37 @@ class AuthTests(
 	}
 
 	@Test
+	fun 登录时角色写入token_管理员可以删除用户_普通用户返回403() {
+		val aliceId = register("alice@example.com", "password1")
+		val bobId = register("bob@example.com", "password1")
+		mapper.addRole(aliceId, Role.ADMIN)
+		val admin = token("alice@example.com", "password1")
+		val user = token("bob@example.com", "password1")
+
+		// URL 级规则拒绝：ExceptionTranslationFilter 调用 AccessDeniedHandler
+		delete("/api/v1/users/$aliceId", user)
+			.expectStatus().isForbidden()
+			.expectHeader().valueMatches("WWW-Authenticate", ".*insufficient_scope.*")
+			.expectBody().json(forbidden("/api/v1/users/$aliceId"), JsonCompareMode.STRICT)
+		delete("/api/v1/users/$bobId", admin).expectStatus().isNoContent()
+	}
+
+	@Test
+	fun 普通用户改别人的名字返回403() {
+		val aliceId = register("alice@example.com", "password1")
+		register("bob@example.com", "password1")
+
+		// 方法级规则（@PreAuthorize）拒绝：经 ErrorHandler 重新抛出，交给 ExceptionTranslationFilter，响应与 URL 级规则一致
+		client.patch().uri("/api/v1/users/$aliceId")
+			.headers { it.setBearerAuth(token("bob@example.com", "password1")) }
+			.contentType(MediaType.APPLICATION_JSON).body("""{"name": "robert"}""")
+			.exchange()
+			.expectStatus().isForbidden()
+			.expectHeader().valueMatches("WWW-Authenticate", ".*insufficient_scope.*")
+			.expectBody().json(forbidden("/api/v1/users/$aliceId"), JsonCompareMode.STRICT)
+	}
+
+	@Test
 	fun 健康检查无需登录() {
 		get("/actuator/health", token = null).expectStatus().isOk()
 	}
@@ -88,21 +121,31 @@ class AuthTests(
 	/** Spring Security 拒绝请求时没有业务码，只有状态码和 title。 */
 	private fun unauthorized(path: String) = """{"title":"Unauthorized","status":401,"instance":"$path"}"""
 
+	private fun forbidden(path: String) = """{"title":"Forbidden","status":403,"instance":"$path"}"""
+
 	private fun sign(encoder: JwtEncoder, expiresAt: Instant): String {
 		val claims = JwtClaimsSet.builder().subject("1").issuedAt(expiresAt - Duration.ofHours(1)).expiresAt(expiresAt).build()
 		return encoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims)).tokenValue
 	}
 
-	private fun register(email: String, password: String) {
-		post("/api/v1/users", """{"name": "alice", "email": "$email", "password": "$password"}""").expectStatus().isCreated()
-	}
+	/** 注册并返回用户 id，用户名取邮箱 @ 之前的部分。 */
+	private fun register(email: String, password: String): Long =
+		post("/api/v1/users", """{"name": "${email.substringBefore('@')}", "email": "$email", "password": "$password"}""")
+			.expectStatus().isCreated()
+			.returnResult<UserRecord>().responseBody!!.id
 
 	private fun login(email: String, password: String) =
 		post("/api/v1/auth/login", """{"email": "$email", "password": "$password"}""")
+
+	private fun token(email: String, password: String): String =
+		login(email, password).expectStatus().isOk().returnResult<AccessToken>().responseBody!!.token
 
 	private fun post(path: String, body: String) =
 		client.post().uri(path).contentType(MediaType.APPLICATION_JSON).body(body).exchange()
 
 	private fun get(path: String, token: String?) =
 		client.get().uri(path).headers { if (token != null) it.setBearerAuth(token) }.exchange()
+
+	private fun delete(path: String, token: String) =
+		client.delete().uri(path).headers { it.setBearerAuth(token) }.exchange()
 }

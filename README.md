@@ -81,7 +81,9 @@ curl localhost:8080/api/v1/users/me -H "Authorization: Bearer $TOKEN"
 - **401**：未带 token、token 过期、签名错误时返回 401，响应体为 Problem Details（没有 `code`），带 `WWW-Authenticate: Bearer ...` 头。Spring Security 在 Filter 中拒绝请求，响应体由入口点调用 `sendError` 转发到 `/error` 写出，所以 `/error` 必须公开。登录失败是业务错误，返回 `40101`，不区分邮箱不存在和密码错误。
 - **token**：HS256 签名，`sub` 为用户 id，有效期 `app.jwt.ttl`（默认 2 小时）。密钥 `app.jwt.secret` 至少 32 字节，没有默认值，用环境变量 `APP_JWT_SECRET` 提供；测试和 `bootTestRun` 用 `src/test/resources/config/application.yaml` 中的测试密钥。JWT 签发后到过期前无法吊销：没有服务端注销，改密码、封号后旧 token 仍然有效，需要时缩短有效期或另加吊销名单。
 - **密码**：`PasswordEncoder` 默认 BCrypt，哈希带算法前缀（`{bcrypt}...`）存入 `users.password_hash`，记录类 `UserRecord` 不含该字段。BCrypt 最多处理 72 字节，注册时按字节校验长度（中文一个字 3 字节）。
-- **以后加角色**：需要 403 时，像 401 一样配置 `accessDeniedHandler`（默认的同样不写响应体）。用 `@PreAuthorize` 做方法级授权时，它抛出的 `AccessDeniedException` 会先被 `ErrorHandler` 捕获，需要在 `when` 中映射为 403，否则会返回 500。
+- **角色**：角色存在 `user_roles` 表（一个用户可有多个，目前只有 `ADMIN`；普通用户不存行，登录即可访问 `authenticated` 的接口），对应枚举 `platform/Role.kt`。登录时写入 token 的 `roles` 声明，鉴权时由 `SecurityConfig` 中的 `JwtAuthenticationConverter` 转成 `ROLE_ADMIN` 等权限。角色写在 token 里，授予或移除后要等用户重新登录才生效，旧 token 到期前仍是原来的角色。第一个管理员需要直接在数据库中授予：`INSERT INTO user_roles (user_id, role) VALUES (1, 'ADMIN');`，之后可由管理员调用 `PUT / DELETE /api/v1/users/{id}/roles/{role}` 授予或移除。
+- **权限规则**：按 URL 能确定的写在 `SecurityConfig` 的 `authorizeHttpRequests` 中，如删除用户、管理角色需要 `hasRole("ADMIN")`；依赖方法参数的写在 Controller 方法上，用 `@PreAuthorize`，如改名只能改自己（`hasRole('ADMIN') or #id.toString() == authentication.name`，`authentication.name` 为 token 的 `sub`）。
+- **403**：已登录但没有权限时返回 403，响应体为 Problem Details（没有 `code`），带 `WWW-Authenticate: Bearer error="insufficient_scope", ...` 头。URL 级规则的拒绝由 `ExceptionTranslationFilter` 交给 `accessDeniedHandler`；`@PreAuthorize` 的拒绝在 Controller 中抛出，`ErrorHandler` 把它原样重新抛出，同样交给 `ExceptionTranslationFilter`，两者响应一致。
 
 ## 表结构
 
