@@ -13,11 +13,11 @@ Spring Boot 4.1 + Kotlin 2.3 + MyBatis + PostgreSQL。完整约定见 README.md�
 - **结果类型**：data class，字段全部 `val`。需要数据库生成值的插入用 `INSERT ... RETURNING`，写在 `<select flushCache="true">` 里返回新行，不用 `useGeneratedKeys`。
 - **分层**：Controller（`@Valid` 校验，直接返回资源，不包装；创建用 `@ResponseStatus(HttpStatus.CREATED)`，无返回内容用 `NO_CONTENT`）→ Service（业务逻辑、事务边界）→ Mapper。Controller 不直接调用 Mapper。示例见 `user/`。
 - **错误**：业务错误抛 `AppException(code, message)`，业务码 5 位、前三位为 HTTP 状态码；领域错误集中定义在各自包内，写成直接抛出异常的函数（返回 `Nothing`），调用处 `?: UserErrors.notFound(id)`，见 `user/UserErrors.kt`。所有错误由 `platform/ErrorHandler` 写成 Problem Details（RFC 9457，`application/problem+json`）：业务错误的 message 为 `detail`、业务码为扩展字段 `code`，其他异常只有状态码和 `title`，没有 `code`；它同时接管 `/error`，Filter 中的异常、`sendError` 也返回同样格式。唯一性冲突靠数据库约束 + 捕获 `DuplicateKeyException`（仅在无外层事务时有效），不先查再插。
-- **鉴权**：Spring Security + 自签 JWT（`platform/SecurityConfig.kt`），除 `SecurityConfig` 中列出的公开接口外都要求登录，新增公开接口时加到那里。角色存 `user_roles` 表、枚举 `platform/Role.kt`，登录时写入 token 的 `roles` 声明（改角色后重新登录才生效）；按 URL 能确定的角色规则写在 `SecurityConfig`，依赖方法参数的用 `@PreAuthorize` 写在 Controller 方法上，两者的 403 都由 `ExceptionTranslationFilter` 统一处理。Controller 取当前用户用 `@AuthenticationPrincipal jwt: Jwt` + `jwt.userId`。密码只存 `PasswordEncoder` 生成的哈希，记录类不含密码哈希字段，登录用的凭证单独查（`UserCredential`）。
+- **鉴权**：Spring Security + 有状态 Bearer token：token 是随机数，会话存 Redis 自动过期（`auth/TokenService.kt`，它同时是 `OpaqueTokenIntrospector`，每个请求查 Redis 得到用户 id、从数据库加载角色），注销即删除会话。授权规则和 401/403 处理在 `platform/SecurityConfig.kt`，除其中列出的公开接口外都要求登录，新增公开接口时加到那里。角色存 `user_roles` 表、枚举 `platform/Role.kt`，改角色立即生效；按 URL 能确定的角色规则写在 `SecurityConfig`，依赖方法参数的用 `@PreAuthorize` 写在 Controller 方法上，两者的 403 都由 `ExceptionTranslationFilter` 统一处理。Controller 取当前用户用参数 `authentication: Authentication` + `authentication.userId`。密码只存 `PasswordEncoder` 生成的哈希，记录类不含密码哈希字段，登录用的凭证单独查（`UserCredential`）。
 - **事务**：不用 `@Transactional`，用 `platform/Tx.kt` 显式开启：`tx.write { }` / `tx.read { }`。
 - **并发**：Controller / Service 写普通函数（跑在虚拟线程上），不写 `suspend` Controller；需要并发时写 `runBlocking { async(Dispatchers.Virtual) { } }`，不要把调度器传给 `runBlocking`。
 - **分包**：按领域分包（如 `user/`），跨领域基础设施放 `platform/`。
-- **测试**：Mapper / Service 用 `@MybatisTest` + Testcontainers 跑真实 SQL（Service 需 `@Import(XxxService::class, Tx::class)`，用到密码时再导入 `PasswordEncoderConfig`）；Controller 用 `@WebMvcTest` + `@Import(SecurityConfig::class)` + `@MockitoBean` mock Service，需要登录的请求加 `with(jwt())`（它不经过 roles 声明的转换，需要角色时用 `.authorities(SimpleGrantedAuthority("ROLE_ADMIN"))` 直接给出），验证响应格式与错误码；经过 `/error` 的响应体（Filter 异常、401、403）用 `RANDOM_PORT` + `@AutoConfigureRestTestClient` 启动真实服务器、注入 `RestTestClient` 验证，见 `auth/AuthTests.kt`；mock 用 mockito-kotlin。
+- **测试**：Mapper / Service 用 `@MybatisTest` + Testcontainers 跑真实 SQL（Service 需 `@Import(XxxService::class, Tx::class)`，用到密码时再导入 `PasswordEncoderConfig`）；Controller 用 `@WebMvcTest` + `@Import(SecurityConfig::class)` + `@MockitoBean` mock Service 和 `OpaqueTokenIntrospector`，需要登录的请求加 `with(opaqueToken())`（它不经过 TokenService，需要角色时用 `.authorities(SimpleGrantedAuthority("ROLE_ADMIN"))` 直接给出），验证响应格式与错误码；经过 `/error` 的响应体（Filter 异常、401、403）用 `RANDOM_PORT` + `@AutoConfigureRestTestClient` 启动真实服务器、注入 `RestTestClient` 验证，见 `auth/AuthTests.kt`（需要 Redis 的测试额外导入 `RedisTestcontainersConfiguration`）；mock 用 mockito-kotlin。
 - **命名**：业务代码（含类名）用英文 camelCase；测试方法名用中文描述被测场景，不用反引号句子，也不加 `@DisplayName`（如 `fun 只读事务拒绝写操作()`）。方法名中不能有空格和中文标点，需要分隔时用下划线。
 
 ## 常用命令
@@ -25,5 +25,5 @@ Spring Boot 4.1 + Kotlin 2.3 + MyBatis + PostgreSQL。完整约定见 README.md�
 ```bash
 ./gradlew build          # 编译 + 全部测试（需要 Docker）
 ./gradlew updateSchema   # 迁移变更后更新 db/schema.sql
-./gradlew bootRun        # 启动，需设置 APP_JWT_SECRET；数据源用 SPRING_DATASOURCE_* 环境变量覆盖
+./gradlew bootRun        # 启动，需要 PostgreSQL 和 Redis；用 SPRING_DATASOURCE_* / SPRING_DATA_REDIS_* 环境变量覆盖
 ```

@@ -12,7 +12,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.security.core.authority.SimpleGrantedAuthority
-import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
+import org.springframework.security.oauth2.server.resource.introspection.OpaqueTokenIntrospector
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.opaqueToken
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.json.JsonCompareMode
 import org.springframework.test.web.servlet.MockMvc
@@ -30,6 +31,10 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 
 	@MockitoBean
 	private lateinit var service: UserService
+
+	/** SecurityConfig 需要它；请求的认证结果由 opaqueToken() 直接放入，不经过 token 校验，所以不会被调用。 */
+	@MockitoBean
+	private lateinit var tokenIntrospector: OpaqueTokenIntrospector
 
 	private val alice = UserRecord(1, "alice", "alice@example.com", OffsetDateTime.parse("2026-01-01T00:00:00Z"))
 
@@ -100,8 +105,8 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 			postUser("""{"name": "alice"}"""),
 			// 30 个汉字：30 个字符，90 字节，超过 BCrypt 72 字节上限
 			postUser("""{"name": "alice", "email": "alice@example.com", "password": "${"密".repeat(30)}"}"""),
-			mvc.get("/api/v1/users?size=1000") { with(jwt()) },
-			mvc.get("/api/v1/users/abc") { with(jwt()) },
+			mvc.get("/api/v1/users?size=1000") { with(opaqueToken()) },
+			mvc.get("/api/v1/users/abc") { with(opaqueToken()) },
 		)
 		for (response in responses) {
 			response.andExpect {
@@ -117,7 +122,7 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	fun 业务异常按业务码返回() {
 		whenever(service.get(9)).thenAnswer { UserErrors.notFound(9) }
 
-		mvc.get("/api/v1/users/9") { with(jwt()) }.andExpect {
+		mvc.get("/api/v1/users/9") { with(opaqueToken()) }.andExpect {
 			status { isNotFound() }
 			content {
 				contentType(MediaType.APPLICATION_PROBLEM_JSON)
@@ -133,7 +138,7 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 	fun 未预期异常返回500且不泄露细节() {
 		whenever(service.get(1)).thenThrow(IllegalStateException("password=secret"))
 
-		mvc.get("/api/v1/users/1") { with(jwt()) }.andExpect {
+		mvc.get("/api/v1/users/1") { with(opaqueToken()) }.andExpect {
 			status { isInternalServerError() }
 			content { json("""{"title":"Internal Server Error","status":500,"instance":"/api/v1/users/1"}""", JsonCompareMode.STRICT) }
 		}
@@ -141,10 +146,10 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 
 	@Test
 	fun 路径方法或ContentType不匹配时返回对应状态码() {
-		mvc.get("/api/v1/nope") { with(jwt()) }.andExpect {
+		mvc.get("/api/v1/nope") { with(opaqueToken()) }.andExpect {
 			status { isNotFound() }
 		}
-		mvc.put("/api/v1/users/1") { with(jwt()) }.andExpect {
+		mvc.put("/api/v1/users/1") { with(opaqueToken()) }.andExpect {
 			status { isMethodNotAllowed() }
 			header { string("Allow", containsString("GET")) }
 		}
@@ -167,9 +172,9 @@ class UserControllerTests(@Autowired private val mvc: MockMvc) {
 		content = """{"name": "robert"}"""
 	}
 
-	/** 没有角色的普通用户。 */
-	private fun user(id: Long) = jwt().jwt { it.subject(id.toString()) }
+	/** 没有角色的普通用户，sub 即 authentication.name。 */
+	private fun user(id: Long) = opaqueToken().attributes { it["sub"] = id.toString() }
 
-	/** 管理员。jwt() 直接放入认证结果，不经过 SecurityConfig 中 roles 声明到权限的转换，需要直接给出权限。 */
-	private fun admin() = jwt().jwt { it.subject("9") }.authorities(SimpleGrantedAuthority("ROLE_ADMIN"))
+	/** 管理员。opaqueToken() 直接放入认证结果，不经过 TokenService 加载角色，需要直接给出权限。 */
+	private fun admin() = user(9).authorities(SimpleGrantedAuthority("ROLE_ADMIN"))
 }

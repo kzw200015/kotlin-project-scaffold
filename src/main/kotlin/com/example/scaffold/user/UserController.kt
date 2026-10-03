@@ -12,8 +12,7 @@ import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import org.springframework.http.HttpStatus
 import org.springframework.security.access.prepost.PreAuthorize
-import org.springframework.security.core.annotation.AuthenticationPrincipal
-import org.springframework.security.oauth2.jwt.Jwt
+import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -38,8 +37,8 @@ class UserController(private val service: UserService) {
 
 	/** 当前登录用户。 */
 	@GetMapping("/me")
-	fun me(@AuthenticationPrincipal jwt: Jwt): UserRecord =
-		service.get(jwt.userId)
+	fun me(authentication: Authentication): UserRecord =
+		service.get(authentication.userId)
 
 	@GetMapping("/{id}")
 	fun get(@PathVariable id: Long): UserRecord =

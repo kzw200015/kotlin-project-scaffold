@@ -9,11 +9,18 @@ spring:
     url: jdbc:postgresql://localhost:5432/app
     username: postgres
     password: postgres
+  # 存放登录会话。默认指向本地；用环境变量覆盖：SPRING_DATA_REDIS_HOST / SPRING_DATA_REDIS_PORT / SPRING_DATA_REDIS_PASSWORD
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      # 只用 StringRedisTemplate，没有 Redis Repository，不需要扫描
+      repositories:
+        enabled: false
 
 app:
-  jwt:
-    # HS256 签名密钥，至少 32 字节，不设默认值，必须用环境变量 APP_JWT_SECRET 提供（生成：openssl rand -base64 48）
-    secret: ${APP_JWT_SECRET}
+  auth:
+    # token 有效期，即 Redis 中会话的过期时间
     ttl: 2h
 
 mybatis:

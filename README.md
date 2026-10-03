@@ -9,7 +9,8 @@ Spring Boot 4.1 + Kotlin 2.3 + MyBatis 脚手架，由 [start.spring.io](https:/
 | Web | spring-boot-starter-webmvc、jackson-module-kotlin（Jackson 3） |
 | 并发 | 虚拟线程（`spring.threads.virtual.enabled=true`，Tomcat 请求线程与 `@Async` 等执行器均为虚拟线程）、kotlinx-coroutines-core（配合 `Dispatchers.Virtual` 在一次调用内做并发） |
 | 数据访问 | mybatis-spring-boot-starter 4.1（XML mapper） |
-| 鉴权 | spring-boot-starter-security、spring-boot-starter-security-oauth2-resource-server（自签 JWT，HS256） |
+| 鉴权 | spring-boot-starter-security、spring-boot-starter-security-oauth2-resource-server（Bearer token 校验，token 为不透明随机数） |
+| 缓存 | spring-boot-starter-data-redis（Lettuce），存放登录会话 |
 | 运维 | spring-boot-starter-actuator（默认只暴露 `/actuator/health`，供部署平台做健康检查） |
 | 迁移 | Flyway（`src/main/resources/db/migration`），当前表结构快照见 `db/schema.sql` |
 | 日志 | SLF4J + Logback（Spring Boot 默认）；惰性日志用 SLF4J 2 fluent API：`log.atDebug().log { "id=$id" }` |
@@ -17,17 +18,17 @@ Spring Boot 4.1 + Kotlin 2.3 + MyBatis 脚手架，由 [start.spring.io](https:/
 
 ## 快速开始
 
-数据源默认指向 `jdbc:postgresql://localhost:5432/app`（见 `application.yaml`），连接其他数据库时用环境变量覆盖：
+数据源默认指向 `jdbc:postgresql://localhost:5432/app`，Redis 默认 `localhost:6379`（见 `application.yaml`），连接其他实例时用环境变量覆盖：
 
 ```bash
 export SPRING_DATASOURCE_URL=jdbc:postgresql://dev-db:5432/app
 export SPRING_DATASOURCE_USERNAME=app
 export SPRING_DATASOURCE_PASSWORD=******
-export APP_JWT_SECRET=$(openssl rand -base64 48)   # JWT 签名密钥，必填；多实例部署时必须一致
+export SPRING_DATA_REDIS_HOST=dev-redis              # Redis 默认 localhost:6379，另有 SPRING_DATA_REDIS_PORT / SPRING_DATA_REDIS_PASSWORD
 
 ./gradlew bootRun       # 启动时自动执行 Flyway 迁移
-./gradlew test          # 需要 Docker，Testcontainers 启动临时 PostgreSQL
-./gradlew bootTestRun   # 需要 Docker，用 Testcontainers 临时库启动应用（无需准备数据库和 JWT 密钥）
+./gradlew test          # 需要 Docker，Testcontainers 启动临时 PostgreSQL（AuthTests 另启动 Redis）
+./gradlew bootTestRun   # 需要 Docker，用 Testcontainers 临时 PostgreSQL 和 Redis 启动应用（无需准备环境）
 ./gradlew updateSchema  # 需要 Docker，迁移变更后更新 db/schema.sql
 ```
 
@@ -66,7 +67,14 @@ Tomcat 在解析阶段就拒绝的非法请求（如格式错误的请求行）�
 
 ## 鉴权约定
 
-无状态 JWT：登录接口校验邮箱密码后签发 token，之后的请求带上 `Authorization: Bearer <token>`。配置见 `platform/SecurityConfig.kt`，登录见 `auth/AuthService.kt`。
+登录接口校验邮箱密码后签发 token，之后的请求带上 `Authorization: Bearer <token>`，注销调用 `POST /api/v1/auth/logout`。登录见 `auth/AuthService.kt`，会话见 `auth/TokenService.kt`，授权规则和 401/403 处理见 `platform/SecurityConfig.kt`。
+
+**有状态 token**：token 是 32 字节随机数，本身不含任何信息；会话存在 Redis 中：`auth:token:{token 的 SHA-256}` → 用户 id，过期时间为 `app.auth.ttl`（默认 2 小时），到期由 Redis 自动删除。
+
+- **校验**：`TokenService` 实现了 Spring Security 的 `OpaqueTokenIntrospector`，在 `SecurityConfig` 中配置为 `opaqueToken` 的校验器。每个请求查 Redis 得到用户 id，再查库确认用户存在、加载角色，所以改角色、删除用户在下一个请求即生效。
+- **注销**：删除 Redis 中的 key，token 立即失效。
+- **只存哈希**：Redis 中只存 token 的 SHA-256，Redis 数据泄露也拿不到可用的 token。
+- **代价**：每个请求一次 Redis 查询和两次数据库查询；Redis 不可用时所有需要登录的接口都返回 401，健康检查也会失败。
 
 ```bash
 curl -X POST localhost:8080/api/v1/users -H 'Content-Type: application/json' \
@@ -77,12 +85,11 @@ curl localhost:8080/api/v1/users/me -H "Authorization: Bearer $TOKEN"
 ```
 
 - **公开接口**：注册（`POST /api/v1/users`）、登录、`/actuator/health/**`、`/error`，在 `SecurityConfig` 中逐个列出；其余接口都要求登录。新增公开接口时加到这里。
-- **当前用户**：Controller 参数写 `@AuthenticationPrincipal jwt: Jwt`，用 `jwt.userId` 取用户 id（token 的 `sub`），需要用户信息时再查库，见 `UserController.me`。
-- **401**：未带 token、token 过期、签名错误时返回 401，响应体为 Problem Details（没有 `code`），带 `WWW-Authenticate: Bearer ...` 头。Spring Security 在 Filter 中拒绝请求，响应体由入口点调用 `sendError` 转发到 `/error` 写出，所以 `/error` 必须公开。登录失败是业务错误，返回 `40101`，不区分邮箱不存在和密码错误。
-- **token**：HS256 签名，`sub` 为用户 id，有效期 `app.jwt.ttl`（默认 2 小时）。密钥 `app.jwt.secret` 至少 32 字节，没有默认值，用环境变量 `APP_JWT_SECRET` 提供；测试和 `bootTestRun` 用 `src/test/resources/config/application.yaml` 中的测试密钥。JWT 签发后到过期前无法吊销：没有服务端注销，改密码、封号后旧 token 仍然有效，需要时缩短有效期或另加吊销名单。
+- **当前用户**：Controller 参数写 `authentication: Authentication`，用 `authentication.userId` 取用户 id，需要用户信息时再查库，见 `UserController.me`。`authentication.name` 即用户 id；需要 token 原文时（如注销）用 `authentication.tokenValue`。
+- **401**：未带 token、token 过期或无效时返回 401，响应体为 Problem Details（没有 `code`），带 `WWW-Authenticate: Bearer ...` 头。Spring Security 在 Filter 中拒绝请求，响应体由入口点调用 `sendError` 转发到 `/error` 写出，所以 `/error` 必须公开。登录失败是业务错误，返回 `40101`，不区分邮箱不存在和密码错误。
 - **密码**：`PasswordEncoder` 默认 BCrypt，哈希带算法前缀（`{bcrypt}...`）存入 `users.password_hash`，记录类 `UserRecord` 不含该字段。BCrypt 最多处理 72 字节，注册时按字节校验长度（中文一个字 3 字节）。
-- **角色**：角色存在 `user_roles` 表（一个用户可有多个，目前只有 `ADMIN`；普通用户不存行，登录即可访问 `authenticated` 的接口），对应枚举 `platform/Role.kt`。登录时写入 token 的 `roles` 声明，鉴权时由 `SecurityConfig` 中的 `JwtAuthenticationConverter` 转成 `ROLE_ADMIN` 等权限。角色写在 token 里，授予或移除后要等用户重新登录才生效，旧 token 到期前仍是原来的角色。第一个管理员需要直接在数据库中授予：`INSERT INTO user_roles (user_id, role) VALUES (1, 'ADMIN');`，之后可由管理员调用 `PUT / DELETE /api/v1/users/{id}/roles/{role}` 授予或移除。
-- **权限规则**：按 URL 能确定的写在 `SecurityConfig` 的 `authorizeHttpRequests` 中，如删除用户、管理角色需要 `hasRole("ADMIN")`；依赖方法参数的写在 Controller 方法上，用 `@PreAuthorize`，如改名只能改自己（`hasRole('ADMIN') or #id.toString() == authentication.name`，`authentication.name` 为 token 的 `sub`）。
+- **角色**：角色存在 `user_roles` 表（一个用户可有多个，目前只有 `ADMIN`；普通用户不存行，登录即可访问 `authenticated` 的接口），对应枚举 `platform/Role.kt`。每个请求由 `TokenService` 从数据库加载，转成 `ROLE_ADMIN` 等权限（Redis 中只存用户 id），授予或移除后立即生效。第一个管理员需要直接在数据库中授予：`INSERT INTO user_roles (user_id, role) VALUES (1, 'ADMIN');`，之后可由管理员调用 `PUT / DELETE /api/v1/users/{id}/roles/{role}` 授予或移除。
+- **权限规则**：按 URL 能确定的写在 `SecurityConfig` 的 `authorizeHttpRequests` 中，如删除用户、管理角色需要 `hasRole("ADMIN")`；依赖方法参数的写在 Controller 方法上，用 `@PreAuthorize`，如改名只能改自己（`hasRole('ADMIN') or #id.toString() == authentication.name`，`authentication.name` 为用户 id）。
 - **403**：已登录但没有权限时返回 403，响应体为 Problem Details（没有 `code`），带 `WWW-Authenticate: Bearer error="insufficient_scope", ...` 头。URL 级规则的拒绝由 `ExceptionTranslationFilter` 交给 `accessDeniedHandler`；`@PreAuthorize` 的拒绝在 Controller 中抛出，`ErrorHandler` 把它原样重新抛出，同样交给 `ExceptionTranslationFilter`，两者响应一致。
 
 ## 表结构
