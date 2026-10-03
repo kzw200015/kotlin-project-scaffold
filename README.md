@@ -152,3 +152,7 @@ fun dashboard(userId: Long): Dashboard = runBlocking {
 ```
 
 - **注意 ThreadLocal 不跟随**：`runBlocking` 不带调度器，代码块本身仍在调用方线程上；只有 `async(Dispatchers.Virtual)` 里的代码运行在别的线程上，不在调用方的事务里，MDC、SecurityContext 也不会自动传递。需要事务的写操作放在 `async` 之外。不要写成 `runBlocking(Dispatchers.Virtual)`，那会把整个代码块都切到新线程。
+
+## 许可证
+
+[MIT](LICENSE)
